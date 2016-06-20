@@ -21,6 +21,7 @@ impl C64 {
     }
 
     pub fn run(&mut self) {
+        self.ram.initialize();
         self.ram.load_roms();
         self.cpu.run(&mut self.ram);
     }

@@ -5,6 +5,7 @@
 use std::fs::File;
 use std::io::Read;
 
+const RAM_IMAGE_FILE: &'static str = "ram-default-image.bin";
 const KERNAL_ROM_FILE: &'static str = "kernal.901227-03.bin";
 const BASIC_ROM_FILE: &'static str = "basic.901226-01.bin";
 const CHAR_ROM_FILE: &'static str = "characters.901225-01.bin";
@@ -34,6 +35,13 @@ impl Memory {
         }
     }
 
+    // Write default values into memory
+    pub fn initialize(&mut self) {
+        let mut file = File::open(RAM_IMAGE_FILE).unwrap();
+        file.read(&mut self.data).unwrap();
+    }
+
+    // Load data for the various ROM chips
     pub fn load_roms(&mut self) {
         let mut k_file = File::open(KERNAL_ROM_FILE).unwrap();
         k_file.read(&mut self.kernal_rom).unwrap();
@@ -62,7 +70,7 @@ impl Memory {
             self.char_rom[offset_addr]
 
         } else {
-            self.data[addr as usize]
+            self.data[addr]
         }
     }
 

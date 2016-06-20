@@ -92,6 +92,21 @@ impl StatusRegister {
             self.zero_result = false;
         }
     }
+
+    // Determine whether a number is zero and set the corresponding status bit
+    pub fn determine_zero(&mut self, value: u8) {
+        self.zero_result = (value == 0);
+    }
+
+    // Determine whether a number is negative and set the corresponding status bit
+    pub fn determine_negative(&mut self, value: u8) {
+        self.negative = (value & 0x80 == 0x80);
+    }
+
+    // Determine whether to set the carry bit
+    pub fn determine_carry(&mut self, value: u8) {
+        self.carry = (value & 0x80 == 0x80);
+    }
 }
 
 pub struct Cpu {
@@ -145,6 +160,22 @@ impl Cpu {
                     let lo = ram.read_byte(IRQ_VEC_LO_ADDR as usize);
                     self.pc = ((hi as u16) << 8) + lo as u16
                 },
+
+                // ASL -- shift left one
+                // zeropage, X
+                0x16 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("ASL, X ${:0>2X}", addr);
+                    let value = ram.read_byte(addr as usize);
+                    ram.write_byte(addr as usize, value.wrapping_shl(1));
+
+                    self.sr.determine_zero(value);
+                    self.sr.determine_negative(value);
+                    self.sr.determine_carry(value);
+
+                    self.pc += 2;
+                },
+
                 // JSR -- jump and save return addr
                 0x20 => {
                     let old_addr = self.pc + 2;
@@ -159,8 +190,19 @@ impl Cpu {
                     let value = ram.read_byte(self.pc as usize + 1);
                     println!("AND #${:0>2X}", value);
                     self.a = self.a & value;
-                    self.sr.negative = true;
-                    self.sr.zero_result = true;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+                // indirect
+                0x31 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("AND (${:0>2X}, X)", addr);
+                    let new_addr = ram.read_word(addr as usize + self.x as usize);
+                    let value = ram.read_byte(new_addr as usize);
+                    self.a = self.a & value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
                     self.pc += 2;
                 },
 
@@ -177,6 +219,26 @@ impl Cpu {
                     println!("RTS");
                     self.pc = self.pop_word(ram);
                     self.pc += 1;
+                },
+
+                // ROR -- rotate one bit right
+                // zero page
+                0x66 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("ROR ${:0>2X}", addr);
+                    let value = ram.read_byte(addr as usize).rotate_right(1);
+                    ram.write_byte(addr as usize, value);
+                    self.sr.determine_zero(value);
+                    self.sr.determine_negative(value);
+                    self.sr.determine_carry(value);
+                    self.pc += 2;
+                },
+
+                // JMP -- jump to location
+                0x6c => {
+                    let addr = ram.read_word(self.pc as usize + 1);
+                    println!("JMP ${:0>4X}", addr);
+                    self.pc = addr;
                 },
 
                 // SEI -- disable interrupts
@@ -206,8 +268,8 @@ impl Cpu {
                 0x8a => {
                     println!("TXA");
                     self.a = self.x;
-                    self.sr.negative = true;
-                    self.sr.zero_result = true;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
                     self.pc += 1;
                 },
 
@@ -215,16 +277,14 @@ impl Cpu {
                 0x98 => {
                     println!("TYA");
                     self.a = self.y;
-                    self.sr.negative = true;
-                    self.sr.zero_result = true;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
                     self.pc += 1;
                 },
                 // TXS -- transfer X to SP
                 0x9a => {
                     println!("TXS");
                     self.sp = self.x;
-                    self.sr.negative = true;
-                    self.sr.zero_result = true;
                     self.pc += 1;
                 },
                 
@@ -233,8 +293,8 @@ impl Cpu {
                 0xa2 => {
                     self.x = ram.read_byte(self.pc as usize + 1);
                     println!("LDX #${:0>2X}", self.x);
-                    self.sr.negative = true;
-                    self.sr.zero_result = true;
+                    self.sr.determine_zero(self.x);
+                    self.sr.determine_negative(self.x);
                     self.pc += 2;
                 },
 
@@ -242,6 +302,8 @@ impl Cpu {
                 0xba => {
                     println!("TSX");
                     self.x = self.sp;
+                    self.sr.determine_zero(self.x);
+                    self.sr.determine_negative(self.x);
                     self.pc += 1;
                 },
 
@@ -251,6 +313,8 @@ impl Cpu {
                     let addr = ram.read_word(self.pc as usize + 1).wrapping_add(self.x as u16) as usize;
                     println!("LDA ${:0>4X}, X", ram.read_word(self.pc as usize + 1));
                     self.a = ram.read_byte(addr);
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
                     self.pc += 3;
                 },
 
@@ -281,6 +345,23 @@ impl Cpu {
                     println!("CLD");
                     self.sr.decimal = false;
                     self.pc += 1;
+                },
+
+                // NOP
+                0xea => {
+                    println!("NOP");
+                    self.pc += 1;
+                },
+
+                // BEQ -- branch if zero
+                0xf0 => {
+                    let offset = ram.read_byte(self.pc as usize + 1);
+                    println!("BEQ ${:0>2X}", offset);
+                    if self.sr.zero_result {
+                        self.pc = self.pc.wrapping_add(offset as u16);
+                    } else {
+                        self.pc += 2;
+                    }
                 },
                 _ => panic!("Unrecognized opcode (${:0>2x})", opcode),
             };
