@@ -169,9 +169,10 @@ impl Cpu {
                     let value = ram.read_byte(addr as usize);
                     ram.write_byte(addr as usize, value.wrapping_shl(1));
 
+                    self.sr.determine_carry(value);
+                    let value = value.wrapping_shl(1);
                     self.sr.determine_zero(value);
                     self.sr.determine_negative(value);
-                    self.sr.determine_carry(value);
 
                     self.pc += 2;
                 },
@@ -229,8 +230,15 @@ impl Cpu {
                     let value = ram.read_byte(addr as usize).rotate_right(1);
                     ram.write_byte(addr as usize, value);
                     self.sr.determine_zero(value);
-                    self.sr.determine_negative(value);
-                    self.sr.determine_carry(value);
+                    if self.sr.zero_result {
+                        self.sr.determine_negative(value.rotate_left(1));
+                    }
+                    if value.rotate_left(1) % 2 == 0 {
+                        self.sr.carry = false;
+                    } else {
+                        self.sr.carry = true;
+                    }
+
                     self.pc += 2;
                 },
 
@@ -322,7 +330,7 @@ impl Cpu {
                 0xd0 => {
                     let offset = ram.read_byte(self.pc as usize + 1);
                     println!("BNE ${:0>2X}", offset);
-                    if !self.sr.zero_result {
+                    if self.sr.zero_result {
                         self.pc = self.pc.wrapping_add(offset as u16);
                     } else {
                         self.pc += 2;
@@ -363,7 +371,21 @@ impl Cpu {
                         self.pc += 2;
                     }
                 },
-                _ => panic!("Unrecognized opcode (${:0>2x})", opcode),
+
+                // INC -- increment memory by 1
+                // absolute, x
+                0xfe => {
+                    let addr = ram.read_word(self.pc as usize + 1).wrapping_add(self.x as u16) as usize;
+                    println!("INC ${:0>4X}, X", ram.read_word(self.pc as usize + 1));
+
+                    let value = ram.read_byte(addr).wrapping_add(1);
+                    ram.write_byte(addr, value);
+
+                    self.sr.determine_zero(value);
+                    self.sr.determine_negative(value);
+                    self.pc += 3;
+                },
+                _ => panic!("Unrecognized opcode (${:0>2X})", opcode),
             };
             
             println!("  {:?}", self);
