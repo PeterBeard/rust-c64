@@ -4,3 +4,4 @@ version = "0.1.0"
 authors = ["Peter Beard <peter.b.beard+github@gmail.com>"]
 
 [dependencies]
+sdl = "0.3.6"
