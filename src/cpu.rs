@@ -163,6 +163,11 @@ impl Cpu {
                     self.pc = ((hi as u16) << 8) + lo as u16
                 },
 
+                // KIL -- halt the CPU
+                0x02 => {
+                    break;
+                },
+
                 // ORA -- A | v
                 // immediate
                 0x09 => {
@@ -197,6 +202,11 @@ impl Cpu {
                     }
                 },
 
+                // KIL -- halt the CPU
+                0x12 => {
+                    break;
+                },
+
                 // ASL -- shift left one
                 // zeropage, X
                 0x16 => {
@@ -226,6 +236,11 @@ impl Cpu {
                     self.push_word(ram, old_addr);
                     self.pc = ram.read_word(self.pc as usize + 1);
                     println!("JSR ${:0>4X}", self.pc);
+                },
+
+                // KIL -- halt the CPU
+                0x22 => {
+                    break;
                 },
 
                 // AND -- store A & M in A
@@ -274,6 +289,17 @@ impl Cpu {
                     self.pc += 2;
                 },
 
+
+                // KIL -- halt the CPU
+                0x32 => {
+                    break;
+                },
+
+                // KIL -- halt the CPU
+                0x42 => {
+                    break;
+                },
+
                 // PHA -- push A onto stack
                 0x48 => {
                     println!("PHA");
@@ -290,11 +316,21 @@ impl Cpu {
                     self.pc = addr;
                 },
 
+                // KIL -- halt the CPU
+                0x52 => {
+                    break;
+                },
+
                 // RTS -- return from subroutine
                 0x60 => {
                     println!("RTS");
                     self.pc = self.pop_word(ram);
                     self.pc += 1;
+                },
+
+                // KIL -- halt the CPU
+                0x62 => {
+                    break;
                 },
 
                 // ROR -- rotate one bit right
@@ -342,6 +378,11 @@ impl Cpu {
                     let addr = ram.read_word(self.pc as usize + 1);
                     println!("JMP ${:0>4X}", addr);
                     self.pc = addr;
+                },
+
+                // KIL -- halt the CPU
+                0x72 => {
+                    break;
                 },
 
                 // SEI -- disable interrupts
@@ -442,6 +483,11 @@ impl Cpu {
                     let direct_addr = ram.read_word(addr.wrapping_add(self.y) as usize);
                     ram.write_byte(direct_addr as usize, self.a);
                     self.pc += 2;
+                },
+
+                // KIL -- halt the CPU
+                0x92 => {
+                    break;
                 },
 
                 // STY -- store Y
@@ -593,7 +639,7 @@ impl Cpu {
                     self.pc += 3;
                 },
 
-                // BCS -- 
+                // BCS -- branch if carry set
                 0xb0 => {
                     let offset = ram.read_byte(self.pc as usize + 1);
                     println!("BCS ${:0>2X}", offset);
@@ -614,6 +660,11 @@ impl Cpu {
                     self.sr.determine_zero(self.a);
                     self.sr.determine_negative(self.a);
                     self.pc += 2;
+                },
+
+                // KIL -- halt the CPU
+                0xb2 => {
+                    break;
                 },
 
                 // LDY -- load into Y
@@ -713,6 +764,11 @@ impl Cpu {
                     self.pc += 2;
                 },
 
+                // KIL -- halt the CPU
+                0xd2 => {
+                    break;
+                },
+
                 // CMP -- compare with accumulator
                 // absolute, x
                 0xdd => {
@@ -776,6 +832,11 @@ impl Cpu {
                     if self.sr.zero_result {
                         self.relative_branch(offset);
                     }
+                },
+
+                // KIL -- halt the CPU
+                0xf2 => {
+                    break;
                 },
 
                 // INC -- increment memory by 1
