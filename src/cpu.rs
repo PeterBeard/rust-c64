@@ -230,7 +230,8 @@ impl Cpu {
                 // PHP -- push a on stack
                 0x08 => {
                     println!("PHA");
-                    self.push(self.a);
+                    let v = self.a;
+                    self.push(ram, v);
                     self.pc += 1;
                 },
 
@@ -250,8 +251,8 @@ impl Cpu {
                     println!("ASL");
                     self.sr.determine_carry(self.a);
                     self.a <<= 1;
-                    self.sr.determine_zero(value);
-                    self.sr.determine_negative(value);
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
 
                     self.pc += 1;
                 },
@@ -278,15 +279,16 @@ impl Cpu {
                     self.pc += 3;
                 },
 
-                // ORA -- A | v
+                // ASL -- shift left one
                 // absolute
                 0x0e => {
                     let addr = ram.read_word(self.pc as usize + 1) as usize;
                     println!("ORA ${:0>4X}", addr);
                     let value = ram.read_byte(addr);
-                    self.a |= value;
-                    self.sr.determine_zero(self.a);
-                    self.sr.determine_negative(self.a);
+                    self.sr.determine_carry(value);
+                    let value = value << 1;
+                    self.sr.determine_zero(value);
+                    self.sr.determine_negative(value);
                     self.pc += 3;
                 },
 
@@ -306,9 +308,44 @@ impl Cpu {
                     }
                 },
 
+                // ORA -- A | v
+                // indirect, y
+                0x11 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("ORA (${:0>2X}, Y)", addr);
+                    let new_addr = ram.read_word(addr.wrapping_add(self.y) as usize) as usize;
+                    let value = ram.read_byte(new_addr);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
                 // KIL -- halt the CPU
                 0x12 => {
                     break;
+                },
+
+                // SLO -- combination of ASL and ORA
+                0x13 => {
+                    panic!("Illegal instruction SLO ($13)");
+                },
+
+                // NOP
+                0x14 => {
+                    panic!("Illegal instruction NOP ($14)");
+                },
+
+                // ORA -- A | v
+                // zeropage, x
+                0x15 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("ORA ${:0>2X}, X", addr);
+                    let value = ram.read_byte(addr.wrapping_add(self.x) as usize);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
                 },
 
                 // ASL -- shift left one
@@ -328,11 +365,28 @@ impl Cpu {
                     self.pc += 2;
                 },
 
+                // SLO -- combination of ASL and ORA
+                0x17 => {
+                    panic!("Illegal opcode SLO ($17)");
+                },
+
                 // CLC -- clear carry flag
                 0x18 => {
                     println!("CLC");
                     self.sr.carry = false;
                     self.pc += 1;
+                },
+
+                // ORA -- A | v
+                // absolute, y
+                0x19 => {
+                    let addr = ram.read_word(self.pc as usize + 1);
+                    println!("ORA ${:0>4X}, Y", addr);
+                    let value = ram.read_byte(addr.wrapping_add(self.y as u16) as usize);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 3;
                 },
 
                 // JSR -- jump and save return addr
