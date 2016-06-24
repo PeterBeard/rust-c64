@@ -163,9 +163,75 @@ impl Cpu {
                     self.pc = ((hi as u16) << 8) + lo as u16
                 },
 
+                // ORA -- A | v
+                // indirect, x
+                0x01 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("ORA (${:0>2X}, X)", addr);
+                    let new_addr = ram.read_word(addr.wrapping_add(self.x) as usize) as usize;
+                    let value = ram.read_byte(new_addr);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
                 // KIL -- halt the CPU
                 0x02 => {
                     break;
+                },
+
+                // SLO -- combination of ASL and ORA
+                // indirect, x
+                0x03 => {
+                    panic!("Illegal opcode SLO ($03)");
+                }
+
+                // NOP -- no op
+                // zeropage
+                0x04 => {
+                    panic!("Illegal opcode NOP ($04)");
+                },
+
+                // ORA -- A | v
+                // zeropage
+                0x05 => {
+                    let addr = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("ORA ${:0>2X}", addr);
+                    let value = ram.read_byte(addr);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
+                // ASL -- shift left one
+                // zeropage
+                0x06 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("ASL ${:0>2X}", addr);
+                    let value = ram.read_byte(addr as usize);
+                    ram.write_byte(addr as usize, value << 1);
+
+                    self.sr.determine_carry(value);
+                    let value = value << 1;
+                    self.sr.determine_zero(value);
+                    self.sr.determine_negative(value);
+
+                    self.pc += 2;
+                },
+
+                // SLO -- combination of ASL and ORA
+                // zeropage
+                0x07 => {
+                    panic!("Illegal opcode SLO ($07)");
+                },
+
+                // PHP -- push a on stack
+                0x08 => {
+                    println!("PHA");
+                    self.push(self.a);
+                    self.pc += 1;
                 },
 
                 // ORA -- A | v
@@ -179,6 +245,27 @@ impl Cpu {
                     self.pc += 2;
                 },
 
+                // ASL -- shift accumulator left one
+                0x0a => {
+                    println!("ASL");
+                    self.sr.determine_carry(self.a);
+                    self.a <<= 1;
+                    self.sr.determine_zero(value);
+                    self.sr.determine_negative(value);
+
+                    self.pc += 1;
+                },
+
+                // ANC -- combination of AND and ASL
+                0x0b => {
+                    panic!("Illegal opcode ANC ($0b)");
+                },
+
+                // NOP
+                0x0c => {
+                    panic!("Illegal opcode NOP ($0c)");
+                },
+
                 // ORA -- A | v
                 // absolute
                 0x0d => {
@@ -189,6 +276,23 @@ impl Cpu {
                     self.sr.determine_zero(self.a);
                     self.sr.determine_negative(self.a);
                     self.pc += 3;
+                },
+
+                // ORA -- A | v
+                // absolute
+                0x0e => {
+                    let addr = ram.read_word(self.pc as usize + 1) as usize;
+                    println!("ORA ${:0>4X}", addr);
+                    let value = ram.read_byte(addr);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 3;
+                },
+
+                // SLO -- combination of ASL and ORA
+                0x0f => {
+                    panic!("Illegal opcode SLO ($0f)");
                 },
 
                 // BPL -- branch if plus
@@ -212,11 +316,12 @@ impl Cpu {
                 0x16 => {
                     let addr = ram.read_byte(self.pc as usize + 1);
                     println!("ASL ${:0>2X}, X", addr);
+                    let addr = addr.wrapping_add(self.x);
                     let value = ram.read_byte(addr as usize);
-                    ram.write_byte(addr as usize, value.wrapping_shl(1));
+                    ram.write_byte(addr as usize, value << 1);
 
                     self.sr.determine_carry(value);
-                    let value = value.wrapping_shl(1);
+                    let value = value << 1;
                     self.sr.determine_zero(value);
                     self.sr.determine_negative(value);
 
