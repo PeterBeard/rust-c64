@@ -26,6 +26,7 @@ pub struct StatusRegister {
 
 impl StatusRegister {
     pub fn from_u8(&mut self, value: u8) {
+        // NV-BDIZC
         self.negative = value & 128 == 128;
         self.overflow = value & 64 == 64;
         self.expansion = value & 32 == 32;
@@ -80,16 +81,17 @@ impl StatusRegister {
 
     // Compare two values and store the results
     pub fn compare(&mut self, a: &u8, b: &u8) {
+        let diff = a.wrapping_sub(*b);
+        self.negative = diff < 0;
+        self.zero_result = false;
+
         if a < b {
             self.carry = false;
-            self.zero_result = false;
         } else if a == b {
-            self.negative = false;
             self.carry = true;
             self.zero_result = true;
         } else {
             self.carry = true;
-            self.zero_result = false;
         }
     }
 
@@ -161,11 +163,49 @@ impl Cpu {
                     self.pc = ((hi as u16) << 8) + lo as u16
                 },
 
+                // ORA -- A | v
+                // immediate
+                0x09 => {
+                    let value = ram.read_byte(self.pc as usize + 1);
+                    println!("ORA #${:0>2X}", value);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
+                // ORA -- A | v
+                // absolute
+                0x0d => {
+                    let addr = ram.read_word(self.pc as usize + 1) as usize;
+                    println!("ORA ${:0>4X}", addr);
+                    let value = ram.read_byte(addr);
+                    self.a |= value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 3;
+                },
+
+                // BPL -- branch if plus
+                0x10 => {
+                    let offset = ram.read_byte(self.pc as usize + 1);
+                    println!("BPL ${:0>2X}", offset);
+                    self.pc += 2;
+
+                    if !self.sr.negative {
+                        if offset < 0x80 {
+                            self.pc = self.pc.wrapping_add(offset as u16);
+                        } else {
+                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+                        }
+                    }
+                },
+
                 // ASL -- shift left one
                 // zeropage, X
                 0x16 => {
                     let addr = ram.read_byte(self.pc as usize + 1);
-                    println!("ASL, X ${:0>2X}", addr);
+                    println!("ASL ${:0>2X}, X", addr);
                     let value = ram.read_byte(addr as usize);
                     ram.write_byte(addr as usize, value.wrapping_shl(1));
 
@@ -175,6 +215,13 @@ impl Cpu {
                     self.sr.determine_negative(value);
 
                     self.pc += 2;
+                },
+
+                // CLC -- clear carry flag
+                0x18 => {
+                    println!("CLC");
+                    self.sr.carry = false;
+                    self.pc += 1;
                 },
 
                 // JSR -- jump and save return addr
@@ -195,6 +242,34 @@ impl Cpu {
                     self.sr.determine_negative(self.a);
                     self.pc += 2;
                 },
+                
+                // ROL -- rotate left
+                // ROL A
+                0x2a => {
+                    println!("ROL");
+                    self.sr.determine_negative(self.a);
+                    self.sr.carry = self.a & 0x80 == 0x80;
+                    self.a = self.a.rotate_left(1);
+                    self.sr.determine_zero(self.a);
+                    self.pc += 1;
+                },
+
+                // BMI -- branch on minus
+                0x30 => {
+                    let offset = ram.read_byte(self.pc as usize + 1);
+                    println!("BMI ${:0>2X}", offset);
+                    self.pc += 2;
+
+                    if self.sr.negative {
+                        if offset < 0x80 {
+                            self.pc = self.pc.wrapping_add(offset as u16);
+                        } else {
+                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+                        }
+                    }
+                },
+
+                // AND -- store A & M in A
                 // indirect
                 0x31 => {
                     let addr = ram.read_byte(self.pc as usize + 1);
@@ -213,6 +288,14 @@ impl Cpu {
                     let a = self.a;
                     self.push(ram, a);
                     self.pc += 1;
+                },
+
+                // JMP -- jump
+                // absolute
+                0x4c => {
+                    let addr = ram.read_word(self.pc as usize + 1);
+                    println!("JMP ${:0>4X}", addr);
+                    self.pc = addr;
                 },
 
                 // RTS -- return from subroutine
@@ -242,6 +325,26 @@ impl Cpu {
                     self.pc += 2;
                 },
 
+                // ADC -- add with carry
+                // immediate
+                0x69 => {
+                    let value = ram.read_byte(self.pc as usize + 1);
+                    println!("ADC #${:0>2X}", value);
+                    let old_sign = self.a & 0x80;
+                    let result = (self.a as u16) + (value as u16);
+                    if self.sr.decimal {
+                        self.sr.carry = result > 99;
+                    } else {
+                        self.sr.carry = result > 0xff;
+                    }
+                    self.a = self.a.wrapping_add(value);
+
+                    self.sr.overflow = old_sign != (self.a & 0x80);
+                    self.sr.determine_zero(self.a);
+
+                    self.pc += 2;
+                },
+
                 // JMP -- jump to location
                 0x6c => {
                     let addr = ram.read_word(self.pc as usize + 1);
@@ -257,19 +360,39 @@ impl Cpu {
                 },
 
                 // STY -- store y
+                // zeropage
                 0x84 => {
                     let addr = ram.read_byte(self.pc as usize + 1) as usize;
-                    println!("STY ${:0>4X}", addr);
+                    println!("STY ${:0>2X}", addr);
                     ram.write_byte(addr, self.y);
                     self.pc += 2;
                 },
 
+                // STA -- store A
+                // zeropage
+                0x85 => {
+                    let addr = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("STA ${:0>2X}", addr);
+                    ram.write_byte(addr, self.a);
+                    self.pc += 2;
+                },
+
                 // STX -- store x
+                // zeropage
                 0x86 => {
                     let addr = ram.read_byte(self.pc as usize + 1) as usize;
-                    println!("STX ${:0>4X}", addr);
+                    println!("STX ${:0>2X}", addr);
                     ram.write_byte(addr, self.x);
                     self.pc += 2;
+                },
+
+                // DEY -- decrement Y
+                0x88 => {
+                    println!("DEY");
+                    self.y = self.y.wrapping_sub(1);
+                    self.sr.determine_negative(self.y);
+                    self.sr.determine_zero(self.y);
+                    self.pc += 1;
                 },
 
                 // TXA -- transfer X to A
@@ -281,6 +404,78 @@ impl Cpu {
                     self.pc += 1;
                 },
 
+                // STY -- store Y
+                // absolute
+                0x8c => {
+                    let addr = ram.read_word(self.pc as usize + 1) as usize;
+                    println!("STY ${:0>4X}", addr);
+                    ram.write_byte(addr, self.y);
+                    self.pc += 3;
+                }
+
+                // STA -- store A
+                // absolute
+                0x8d => {
+                    let addr = ram.read_word(self.pc as usize + 1) as usize;
+                    println!("STA ${:0>4X}", addr);
+                    ram.write_byte(addr, self.a);
+                    self.pc += 3;
+                },
+                
+                // STX -- store X
+                // absolute
+                0x8e => {
+                    let addr = ram.read_word(self.pc as usize + 1) as usize;
+                    println!("STX ${:0>4X}", addr);
+                    ram.write_byte(addr, self.x);
+                    self.pc += 3;
+                },
+
+                // BCC -- branch if carry clear
+                0x90 => {
+                    let offset = ram.read_byte(self.pc as usize + 1);
+                    println!("BCC ${:0>2X}", offset);
+                    self.pc += 2;
+
+                    if !self.sr.carry {
+                        if offset < 0x80 {
+                            self.pc = self.pc.wrapping_add(offset as u16);
+                        } else {
+                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+                        }
+                    }
+                },
+
+                // STA -- store A
+                // indirect, y
+                0x91 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("STA (${:0>2X}), Y", addr);
+                    let direct_addr = ram.read_word(addr.wrapping_add(self.y) as usize);
+                    ram.write_byte(direct_addr as usize, self.a);
+                    self.pc += 2;
+                },
+
+                // STY -- store Y
+                // zeropage, X
+                0x94 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("STY ${:0>2X}, X", addr);
+                    let addr = addr.wrapping_add(self.x) as usize;
+                    ram.write_byte(addr, self.y);
+                    self.pc += 2;
+                },
+
+                // STA -- store A
+                // zeropage, X
+                0x95 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("STA ${:0>2X}, X", addr);
+                    let addr = addr.wrapping_add(self.x) as usize;
+                    ram.write_byte(addr, self.a);
+                    self.pc += 2;
+                },
+
                 // TYA -- transfer Y to A
                 0x98 => {
                     println!("TYA");
@@ -289,11 +484,42 @@ impl Cpu {
                     self.sr.determine_negative(self.a);
                     self.pc += 1;
                 },
+
+                // STA -- store A
+                // absolute, y
+                0x99 => {
+                    let addr = ram.read_word(self.pc as usize + 1);
+                    println!("STA ${:0>4X}, Y", addr);
+                    let addr = addr.wrapping_add(self.y as u16);
+                    ram.write_byte(addr as usize, self.a);
+                    self.pc += 3;
+                },
+
                 // TXS -- transfer X to SP
                 0x9a => {
                     println!("TXS");
                     self.sp = self.x;
                     self.pc += 1;
+                },
+
+                // STA -- store A
+                // absolute, X
+                0x9d => {
+                    let addr = ram.read_word(self.pc as usize + 1);
+                    println!("STA ${:0>4X}, X", addr);
+                    let addr = addr.wrapping_add(self.x as u16);
+                    ram.write_byte(addr as usize, self.a);
+                    self.pc += 3;
+                },
+
+                // LDY -- load into Y
+                // immediate
+                0xa0 => {
+                    self.y = ram.read_byte(self.pc as usize + 1);
+                    println!("LDY #${:0>2X}", self.y);
+                    self.sr.determine_zero(self.y);
+                    self.sr.determine_negative(self.y);
+                    self.pc += 2;
                 },
                 
                 // LDX -- load into X
@@ -304,6 +530,141 @@ impl Cpu {
                     self.sr.determine_zero(self.x);
                     self.sr.determine_negative(self.x);
                     self.pc += 2;
+                },
+
+                // LDY -- load into Y
+                // zeropage
+                0xa4 => {
+                    let addr = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("LDA {:0>2X}", addr);
+                    self.y = ram.read_byte(addr);
+                    self.sr.determine_negative(self.y);
+                    self.sr.determine_zero(self.y);
+                    self.pc += 2;
+                },
+
+                // LDA -- load into A
+                // zeropage
+                0xa5 => {
+                    let addr = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("LDA ${:0>2X}", addr);
+                    self.a = ram.read_byte(addr);
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
+                // LDX -- load into X
+                // zeropage
+                0xa6 => {
+                    let addr = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("LDX ${:0>2X}", addr);
+                    self.x = ram.read_byte(addr);
+                    self.sr.determine_zero(self.x);
+                    self.sr.determine_negative(self.x);
+                    self.pc += 2;
+                },
+
+                // TAY -- transfer A to Y
+                0xa8 => {
+                    println!("TAY");
+                    self.y = self.a;
+                    self.sr.determine_negative(self.y);
+                    self.sr.determine_zero(self.y);
+                    self.pc += 1;
+                }
+
+                // LDA -- load into A
+                // immediate
+                0xa9 => {
+                    let value = ram.read_byte(self.pc as usize + 1);
+                    println!("LDA #${:0>2X}", value);
+                    self.a = value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
+                // TAX -- transfer A to X
+                0xaa => {
+                    println!("TAX");
+                    self.x = self.a;
+                    self.sr.determine_negative(self.x);
+                    self.sr.determine_zero(self.x);
+                    self.pc += 1;
+                }
+
+                // absolute
+                0xad => {
+                    let addr = ram.read_word(self.pc as usize + 1) as usize;
+                    println!("LDA ${:0>4X}", addr);
+                    let value = ram.read_byte(addr);
+                    self.a = value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 3;
+                },
+
+                // BCS -- 
+                0xb0 => {
+                    let offset = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("BCS ${:0>2X}", offset);
+                    self.pc += 2;
+                    if self.sr.carry {
+                        if offset < 0x80 {
+                            self.pc = self.pc.wrapping_add(offset as u16);
+                        } else {
+                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+                        }
+                    }
+                },
+
+                // LDA -- load into A
+                // indirect, y
+                0xb1 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("LDA (${:0>2X}), Y", addr);
+                    let direct_addr = ram.read_word(addr.wrapping_add(self.y) as usize);
+                    let value = ram.read_byte(direct_addr as usize);
+                    self.a = value;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
+                // LDY -- load into Y
+                // zeropage, X
+                0xb4 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("LDY ${:0>2X}, X", addr);
+                    let addr = addr.wrapping_add(self.x);
+                    self.y = ram.read_byte(addr as usize);
+                    self.sr.determine_zero(self.y);
+                    self.sr.determine_negative(self.y);
+                    self.pc += 2;
+                },
+
+                // LDA -- load into A
+                // zeropage, X
+                0xb5 => {
+                    let addr = ram.read_byte(self.pc as usize + 1);
+                    println!("LDA ${:0>2X}, X", addr);
+                    let addr = addr.wrapping_add(self.x);
+                    self.a = ram.read_byte(addr as usize);
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 2;
+                },
+
+                // LDA -- load into A
+                // absolute, Y
+                0xb9 => {
+                    let addr = ram.read_word(self.pc as usize + 1);
+                    println!("LDA ${:0>4X}, Y", addr);
+                    self.a = ram.read_byte(addr.wrapping_add(self.y as u16) as usize);
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    self.pc += 3;
                 },
 
                 // TSX -- transfer SP to X
@@ -326,15 +687,50 @@ impl Cpu {
                     self.pc += 3;
                 },
 
+                // INY -- increment Y
+                0xc8 => {
+                    println!("INY");
+                    self.y = self.y.wrapping_add(1);
+                    self.sr.determine_negative(self.y);
+                    self.sr.determine_zero(self.y);
+
+                    self.pc += 1;
+                },
+
+                // DEX -- decrement X
+                0xca => {
+                    println!("DEX");
+                    self.x = self.x.wrapping_sub(1);
+                    self.sr.determine_negative(self.x);
+                    self.sr.determine_zero(self.x);
+
+                    self.pc += 1;
+                },
+
                 // BNE -- branch on result not zero
                 0xd0 => {
                     let offset = ram.read_byte(self.pc as usize + 1);
                     println!("BNE ${:0>2X}", offset);
-                    if self.sr.zero_result {
-                        self.pc = self.pc.wrapping_add(offset as u16);
-                    } else {
-                        self.pc += 2;
+                    self.pc += 2;
+                    if !self.sr.zero_result {
+                        if offset < 0x80 {
+                            self.pc = self.pc.wrapping_add(offset as u16);
+                        } else {
+                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+                        }
                     }
+                },
+
+                // CMP -- compare with accumulator
+                // indirect, y
+                0xd1 => {
+                    let addr = ram.read_byte(self.pc as usize + 1).wrapping_add(self.y) as usize;
+                    let direct_addr = ram.read_word(addr);
+                    let value = ram.read_byte(direct_addr as usize);
+
+                    println!("CMP (${:0>2X}), Y", ram.read_byte(self.pc as usize + 1));
+                    self.sr.compare(&self.a, &value);
+                    self.pc += 2;
                 },
 
                 // CMP -- compare with accumulator
@@ -355,6 +751,37 @@ impl Cpu {
                     self.pc += 1;
                 },
 
+                // CPX compare X to memory
+                // immediate
+                0xe0 => {
+                    let value = ram.read_byte(self.pc as usize + 1);
+                    println!("CPX #${:0>2X}", value);
+                    self.sr.compare(&self.x, &value);
+                    self.pc += 2;
+                },
+
+                // INC -- increment
+                // zeropage
+                0xe6 => {
+                    let addr = ram.read_byte(self.pc as usize + 1) as usize;
+                    println!("INC ${:0>2X}", addr);
+                    let value = ram.read_byte(addr).wrapping_add(1);
+                    ram.write_byte(addr, value);
+                    self.sr.determine_negative(value);
+                    self.sr.determine_zero(value);
+                    
+                    self.pc += 2;
+                },
+
+                // INX -- increment X
+                0xe8 => {
+                    println!("INX");
+                    self.x = self.x.wrapping_add(1);
+                    self.sr.determine_zero(self.x);
+                    self.sr.determine_negative(self.x);
+                    self.pc += 1;
+                },
+
                 // NOP
                 0xea => {
                     println!("NOP");
@@ -365,10 +792,13 @@ impl Cpu {
                 0xf0 => {
                     let offset = ram.read_byte(self.pc as usize + 1);
                     println!("BEQ ${:0>2X}", offset);
+                    self.pc += 2;
                     if self.sr.zero_result {
-                        self.pc = self.pc.wrapping_add(offset as u16);
-                    } else {
-                        self.pc += 2;
+                        if offset < 0x80 {
+                            self.pc = self.pc.wrapping_add(offset as u16);
+                        } else {
+                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+                        }
                     }
                 },
 
