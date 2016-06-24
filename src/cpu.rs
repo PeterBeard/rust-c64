@@ -82,7 +82,7 @@ impl StatusRegister {
     // Compare two values and store the results
     pub fn compare(&mut self, a: &u8, b: &u8) {
         let diff = a.wrapping_sub(*b);
-        self.negative = diff < 0;
+        self.negative = diff > 0x80;
         self.zero_result = false;
 
         if a < b {
