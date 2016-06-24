@@ -193,11 +193,7 @@ impl Cpu {
                     self.pc += 2;
 
                     if !self.sr.negative {
-                        if offset < 0x80 {
-                            self.pc = self.pc.wrapping_add(offset as u16);
-                        } else {
-                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
-                        }
+                        self.relative_branch(offset);
                     }
                 },
 
@@ -261,11 +257,7 @@ impl Cpu {
                     self.pc += 2;
 
                     if self.sr.negative {
-                        if offset < 0x80 {
-                            self.pc = self.pc.wrapping_add(offset as u16);
-                        } else {
-                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
-                        }
+                        self.relative_branch(offset);
                     }
                 },
 
@@ -438,11 +430,7 @@ impl Cpu {
                     self.pc += 2;
 
                     if !self.sr.carry {
-                        if offset < 0x80 {
-                            self.pc = self.pc.wrapping_add(offset as u16);
-                        } else {
-                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
-                        }
+                        self.relative_branch(offset);
                     }
                 },
 
@@ -607,15 +595,11 @@ impl Cpu {
 
                 // BCS -- 
                 0xb0 => {
-                    let offset = ram.read_byte(self.pc as usize + 1) as usize;
+                    let offset = ram.read_byte(self.pc as usize + 1);
                     println!("BCS ${:0>2X}", offset);
                     self.pc += 2;
                     if self.sr.carry {
-                        if offset < 0x80 {
-                            self.pc = self.pc.wrapping_add(offset as u16);
-                        } else {
-                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
-                        }
+                        self.relative_branch(offset);
                     }
                 },
 
@@ -713,11 +697,7 @@ impl Cpu {
                     println!("BNE ${:0>2X}", offset);
                     self.pc += 2;
                     if !self.sr.zero_result {
-                        if offset < 0x80 {
-                            self.pc = self.pc.wrapping_add(offset as u16);
-                        } else {
-                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
-                        }
+                        self.relative_branch(offset);
                     }
                 },
 
@@ -794,11 +774,7 @@ impl Cpu {
                     println!("BEQ ${:0>2X}", offset);
                     self.pc += 2;
                     if self.sr.zero_result {
-                        if offset < 0x80 {
-                            self.pc = self.pc.wrapping_add(offset as u16);
-                        } else {
-                            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
-                        }
+                        self.relative_branch(offset);
                     }
                 },
 
@@ -848,6 +824,15 @@ impl Cpu {
         self.sp = self.sp.wrapping_add(1);
         let value = ram.read_byte((self.sp as u16 + STACK_START_ADDR) as usize);
         value
+    }
+
+    // Apply an offset for relative addressing
+    fn relative_branch(&mut self, offset: u8) {
+        if offset < 0x80 {
+            self.pc = self.pc.wrapping_add(offset as u16);
+        } else {
+            self.pc = self.pc.wrapping_sub(0x100 - offset as u16);
+        }
     }
 }
 
