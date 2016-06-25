@@ -3,7 +3,7 @@
 
 mod cpu;
 mod bus;
-mod vic;
+mod io;
 
 use cpu::Cpu;
 use bus::Bus;

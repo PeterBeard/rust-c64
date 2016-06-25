@@ -2,8 +2,14 @@
 // Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
 //
 // Functions and datatypes relating to the system bus
-use vic;
-use vic::Vic;
+use io::vic;
+use io::vic::Vic;
+
+use io::sid;
+use io::sid::Sid;
+
+use io::cia;
+use io::cia::Cia;
 
 use std::fs::File;
 use std::io::Read;
@@ -24,13 +30,24 @@ const CHAR_ROM_SIZE: usize = 4096;
 const IO_START: usize = 0xd000;
 const IO_END: usize = 0xdfff;
 
+const COLOR_RAM_START: usize = 0xd800;
+const COLOR_RAM_END: usize = 0xdbff;
+
+const CIA1_MIN_CONTROL_ADDR: usize = 0xdc00;
+const CIA1_MAX_CONTROL_ADDR: usize = 0xdcff;
+const CIA2_MIN_CONTROL_ADDR: usize = 0xdd00;
+const CIA2_MAX_CONTROL_ADDR: usize = 0xddff;
+
 pub struct Bus {
     ram: [u8; 65536],
     kernal_rom: [u8; KERNAL_ROM_SIZE],
     basic_rom: [u8; BASIC_ROM_SIZE],
     char_rom: [u8; CHAR_ROM_SIZE],
 
-    vic: Vic
+    vic: Vic,
+    sid: Sid,
+    cia_1: Cia,
+    cia_2: Cia,
 }
 
 impl Bus {
@@ -42,6 +59,9 @@ impl Bus {
             char_rom: [0u8; CHAR_ROM_SIZE],
 
             vic: Vic::new(),
+            sid: Sid::new(),
+            cia_1: Cia::new(CIA1_MIN_CONTROL_ADDR),
+            cia_2: Cia::new(CIA2_MIN_CONTROL_ADDR),
         }
     }
 
@@ -84,14 +104,25 @@ impl Bus {
         } else if char_rom_enabled && addr >= CHAR_ROM_START && addr < CHAR_ROM_START + CHAR_ROM_SIZE {
             let offset_addr = addr - CHAR_ROM_START;
             self.char_rom[offset_addr]
-        } else if io_enabled && addr >= IO_START && addr <= IO_END {
-            if addr >= vic::MIN_CONTROL_ADDR && addr <= vic::MAX_CONTROL_ADDR {
-                self.vic.read_register(addr)
-            } else {
-                panic!("Unimplemented I/O address: ${:0>4X}", addr);
-            }
+        } else if io_enabled && addr >= IO_START && addr <= IO_END && !(addr >= COLOR_RAM_START && addr < COLOR_RAM_END) {
+            self.io_read(addr)
         } else {
             self.ram[addr]
+        }
+    }
+
+    // Read from an I/O device
+    fn io_read(&self, addr: usize) -> u8 {
+        if addr >= vic::MIN_CONTROL_ADDR && addr <= vic::MAX_CONTROL_ADDR {
+            self.vic.read_register(addr)
+        } else if addr >= sid::MIN_CONTROL_ADDR && addr <= sid::MAX_CONTROL_ADDR {
+            self.sid.read_register(addr)
+        } else if addr >= CIA1_MIN_CONTROL_ADDR && addr <= CIA1_MAX_CONTROL_ADDR {
+            self.cia_1.read_register(addr)
+        } else if addr >= CIA2_MIN_CONTROL_ADDR && addr <= CIA2_MAX_CONTROL_ADDR {
+            self.cia_2.read_register(addr)
+        } else {
+            panic!("Unimplemented I/O address: ${:0>4X}", addr);
         }
     }
 
@@ -104,6 +135,28 @@ impl Bus {
 
     // Write a byte to the given address
     pub fn write_byte(&mut self, addr: usize, value: u8) {
-        self.ram[addr] = value;
+        let io_enabled = (self.ram[1] & 7) > 4;
+
+        if io_enabled && addr >= IO_START && addr <= IO_END && !(addr >= COLOR_RAM_START && addr < COLOR_RAM_END) {
+            self.io_write(addr, value);
+        } else {
+            // System always writes to RAM even if it's masked by a ROM
+            self.ram[addr] = value;
+        }
+    }
+
+    // Write to an I/O device
+    fn io_write(&mut self, addr: usize, value: u8) {
+        if addr >= vic::MIN_CONTROL_ADDR && addr <= vic::MAX_CONTROL_ADDR {
+            self.vic.write_register(addr, value);
+        } else if addr >= sid::MIN_CONTROL_ADDR && addr <= sid::MAX_CONTROL_ADDR {
+            self.sid.write_register(addr, value);
+        } else if addr >= CIA1_MIN_CONTROL_ADDR && addr <= CIA1_MAX_CONTROL_ADDR {
+            self.cia_1.write_register(addr, value);
+        } else if addr >= CIA2_MIN_CONTROL_ADDR && addr <= CIA2_MAX_CONTROL_ADDR {
+            self.cia_2.write_register(addr, value);
+        } else {
+            panic!("Unimplemented I/O address: ${:0>4X}", addr);
+        }
     }
 }

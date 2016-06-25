@@ -5,7 +5,7 @@
 
 pub const MIN_CONTROL_ADDR: usize = 0xd000;
 pub const MAX_CONTROL_ADDR: usize = 0xd3ff;
-pub const CONTROL_REG_COUNT: u8 = 0x3f;
+const CONTROL_REG_COUNT: usize = 0x3f;
 
 pub struct Vic {
     // Registers
@@ -116,8 +116,8 @@ impl Vic {
         if addr > MAX_CONTROL_ADDR || addr < MIN_CONTROL_ADDR {
             panic!("Invalid address for VIC-II control register: ${:0>4X}", addr);
         }
-        if (addr - MIN_CONTROL_ADDR) > CONTROL_REG_COUNT as usize {
-            return self.translate_addr(addr - CONTROL_REG_COUNT as usize);
+        if (addr - MIN_CONTROL_ADDR) > CONTROL_REG_COUNT {
+            return self.translate_addr(addr - CONTROL_REG_COUNT);
         }
         (addr - MIN_CONTROL_ADDR) as u8
     }
