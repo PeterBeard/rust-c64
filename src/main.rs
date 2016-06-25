@@ -3,6 +3,7 @@
 
 mod cpu;
 mod memory;
+mod vic;
 
 use cpu::Cpu;
 use memory::Memory;
