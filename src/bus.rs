@@ -40,6 +40,7 @@ const CIA2_MAX_CONTROL_ADDR: usize = 0xddff;
 
 pub struct Bus {
     ram: [u8; 65536],
+    color_ram: [u8; 1024], // Only the 4 low bits of each byte are used
     kernal_rom: [u8; KERNAL_ROM_SIZE],
     basic_rom: [u8; BASIC_ROM_SIZE],
     char_rom: [u8; CHAR_ROM_SIZE],
@@ -54,6 +55,7 @@ impl Bus {
     pub fn new() -> Bus {
         Bus {
             ram: [0u8; 65536],
+            color_ram: [0u8; 1024],
             kernal_rom: [0u8; KERNAL_ROM_SIZE],
             basic_rom: [0u8; BASIC_ROM_SIZE],
             char_rom: [0u8; CHAR_ROM_SIZE],
@@ -104,7 +106,7 @@ impl Bus {
         } else if char_rom_enabled && addr >= CHAR_ROM_START && addr < CHAR_ROM_START + CHAR_ROM_SIZE {
             let offset_addr = addr - CHAR_ROM_START;
             self.char_rom[offset_addr]
-        } else if io_enabled && addr >= IO_START && addr <= IO_END && !(addr >= COLOR_RAM_START && addr < COLOR_RAM_END) {
+        } else if io_enabled && addr >= IO_START && addr <= IO_END {
             self.io_read(addr)
         } else {
             self.ram[addr]
@@ -117,6 +119,8 @@ impl Bus {
             self.vic.read_register(addr)
         } else if addr >= sid::MIN_CONTROL_ADDR && addr <= sid::MAX_CONTROL_ADDR {
             self.sid.read_register(addr)
+        } else if addr >= COLOR_RAM_START && addr <= COLOR_RAM_END {
+            self.color_ram[addr - COLOR_RAM_START]
         } else if addr >= CIA1_MIN_CONTROL_ADDR && addr <= CIA1_MAX_CONTROL_ADDR {
             self.cia_1.read_register(addr)
         } else if addr >= CIA2_MIN_CONTROL_ADDR && addr <= CIA2_MAX_CONTROL_ADDR {
@@ -137,7 +141,7 @@ impl Bus {
     pub fn write_byte(&mut self, addr: usize, value: u8) {
         let io_enabled = (self.ram[1] & 7) > 4;
 
-        if io_enabled && addr >= IO_START && addr <= IO_END && !(addr >= COLOR_RAM_START && addr < COLOR_RAM_END) {
+        if io_enabled && addr >= IO_START && addr <= IO_END{
             self.io_write(addr, value);
         } else {
             // System always writes to RAM even if it's masked by a ROM
@@ -151,6 +155,8 @@ impl Bus {
             self.vic.write_register(addr, value);
         } else if addr >= sid::MIN_CONTROL_ADDR && addr <= sid::MAX_CONTROL_ADDR {
             self.sid.write_register(addr, value);
+        } else if addr >= COLOR_RAM_START && addr <= COLOR_RAM_END {
+            self.color_ram[addr - COLOR_RAM_START] = value & 0x0f;
         } else if addr >= CIA1_MIN_CONTROL_ADDR && addr <= CIA1_MAX_CONTROL_ADDR {
             self.cia_1.write_register(addr, value);
         } else if addr >= CIA2_MIN_CONTROL_ADDR && addr <= CIA2_MAX_CONTROL_ADDR {
