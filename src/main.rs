@@ -2,29 +2,29 @@
 // Distributed under the GNU GPL v3. For full terms, see the LICENSE file.
 
 mod cpu;
-mod memory;
+mod bus;
 mod vic;
 
 use cpu::Cpu;
-use memory::Memory;
+use bus::Bus;
 
 struct C64 {
     cpu: Cpu,
-    ram: Memory,
+    bus: Bus,
 }
 
 impl C64 {
     pub fn new() -> C64 {
         C64 {
             cpu: Cpu::new(),
-            ram: Memory::new(),
+            bus: Bus::new(),
         }
     }
 
     pub fn run(&mut self) {
-        self.ram.initialize();
-        self.ram.load_roms();
-        self.cpu.run(&mut self.ram);
+        self.bus.initialize();
+        self.bus.load_roms();
+        self.cpu.run(&mut self.bus);
     }
 }
 

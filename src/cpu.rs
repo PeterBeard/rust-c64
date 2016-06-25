@@ -4,7 +4,7 @@
 // Functions and datatypes related to the CPU
 
 use std::fmt;
-use memory::Memory;
+use bus::Bus;
 
 const RESET_VECTOR_ADDR: u16 = 0xfce2;
 const STACK_START_ADDR: u16 = 0x0100;
@@ -138,7 +138,7 @@ impl Cpu {
         self.sp = 0xfd; // The stack pointer ends up initialized to 0xfd
     }
 
-    pub fn run(&mut self, ram: &mut Memory) {
+    pub fn run(&mut self, ram: &mut Bus) {
         self.reset();
         loop {
             // Fetch an instruction from RAM
@@ -1019,7 +1019,7 @@ impl Cpu {
     }
 
     // Push a word onto the stack {
-    fn push_word(&mut self, ram: &mut Memory, value: u16) {
+    fn push_word(&mut self, ram: &mut Bus, value: u16) {
         let hi = (value >> 8) as u8;
         let lo = (value & 0xff) as u8;
         self.push(ram, hi);
@@ -1027,20 +1027,20 @@ impl Cpu {
     }
 
     // Push a byte onto the stack
-    fn push(&mut self, ram: &mut Memory, value: u8) {
+    fn push(&mut self, ram: &mut Bus, value: u8) {
         ram.write_byte((self.sp as u16 + STACK_START_ADDR) as usize, value);
         self.sp = self.sp.wrapping_sub(1);
     }
 
     // Pop a word off the stack
-    fn pop_word(&mut self, ram: &Memory) -> u16 {
+    fn pop_word(&mut self, ram: &Bus) -> u16 {
         let lo = self.pop(ram);
         let hi = self.pop(ram);
         ((hi as u16) << 8) + lo as u16
     }
 
     // Pop a byte off the stack
-    fn pop(&mut self, ram: &Memory) -> u8 {
+    fn pop(&mut self, ram: &Bus) -> u8 {
         self.sp = self.sp.wrapping_add(1);
         let value = ram.read_byte((self.sp as u16 + STACK_START_ADDR) as usize);
         value

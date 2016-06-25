@@ -1,7 +1,7 @@
 // Copyright 2016 Peter Beard
 // Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
 //
-// Functions and datatypes relating to RAM
+// Functions and datatypes relating to the system bus
 use vic;
 use vic::Vic;
 
@@ -24,8 +24,8 @@ const CHAR_ROM_SIZE: usize = 4096;
 const IO_START: usize = 0xd000;
 const IO_END: usize = 0xdfff;
 
-pub struct Memory {
-    data: [u8; 65536],
+pub struct Bus {
+    ram: [u8; 65536],
     kernal_rom: [u8; KERNAL_ROM_SIZE],
     basic_rom: [u8; BASIC_ROM_SIZE],
     char_rom: [u8; CHAR_ROM_SIZE],
@@ -33,10 +33,10 @@ pub struct Memory {
     vic: Vic
 }
 
-impl Memory {
-    pub fn new() -> Memory {
-        Memory {
-            data: [0u8; 65536],
+impl Bus {
+    pub fn new() -> Bus {
+        Bus {
+            ram: [0u8; 65536],
             kernal_rom: [0u8; KERNAL_ROM_SIZE],
             basic_rom: [0u8; BASIC_ROM_SIZE],
             char_rom: [0u8; CHAR_ROM_SIZE],
@@ -48,7 +48,7 @@ impl Memory {
     // Write default values into memory
     pub fn initialize(&mut self) {
         let mut file = File::open(RAM_IMAGE_FILE).unwrap();
-        file.read(&mut self.data).unwrap();
+        file.read(&mut self.ram).unwrap();
     }
 
     // Load data for the various ROM chips
@@ -66,7 +66,7 @@ impl Memory {
     // Read a byte from the given address
     pub fn read_byte(&self, addr: usize) -> u8 {
         // Determine whether to read from ROM or RAM
-        let rom_status = (self.data[1] & 7);
+        let rom_status = (self.ram[1] & 7);
         let kernal_rom_enabled = rom_status % 4 > 1;
         let basic_rom_enabled = rom_status % 4 == 3;
         let char_rom_enabled = rom_status < 4 && rom_status > 0;
@@ -91,7 +91,7 @@ impl Memory {
                 panic!("Unimplemented I/O address: ${:0>4X}", addr);
             }
         } else {
-            self.data[addr]
+            self.ram[addr]
         }
     }
 
@@ -104,6 +104,6 @@ impl Memory {
 
     // Write a byte to the given address
     pub fn write_byte(&mut self, addr: usize, value: u8) {
-        self.data[addr] = value;
+        self.ram[addr] = value;
     }
 }
