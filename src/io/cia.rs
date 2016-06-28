@@ -55,10 +55,7 @@ impl Cia {
         if addr >= (self.base_addr + CONTROL_REG_COUNT) || addr < self.base_addr {
             panic!("Invalid address for CIA control register: ${:0>4X}", addr);
         }
-        if (addr - self.base_addr) > CONTROL_REG_COUNT {
-            return self.translate_addr(addr - CONTROL_REG_COUNT);
-        }
-        (addr - self.base_addr) as u8
+        ((addr - self.base_addr) % CONTROL_REG_COUNT) as u8
     }
 
 

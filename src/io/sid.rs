@@ -77,10 +77,7 @@ impl Sid {
         if addr > MAX_CONTROL_ADDR || addr < MIN_CONTROL_ADDR {
             panic!("Invalid address for SID control register: ${:0>4X}", addr);
         }
-        if (addr - MIN_CONTROL_ADDR) > CONTROL_REG_COUNT {
-            return self.translate_addr(addr - CONTROL_REG_COUNT);
-        }
-        (addr - MIN_CONTROL_ADDR) as u8
+        ((addr - MIN_CONTROL_ADDR) % CONTROL_REG_COUNT) as u8
     }
 
 
