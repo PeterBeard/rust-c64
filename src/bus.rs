@@ -2,6 +2,8 @@
 // Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
 //
 // Functions and datatypes relating to the system bus
+use cpu::Cpu;
+
 use io::vic;
 use io::vic::Vic;
 
@@ -12,7 +14,10 @@ use io::cia;
 use io::cia::Cia;
 
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, stdin};
+
+use std::time::{Instant, Duration};
+use std::thread::sleep;
 
 const RAM_IMAGE_FILE: &'static str = "ram-default-image.bin";
 const KERNAL_ROM_FILE: &'static str = "kernal.901227-03.bin";
@@ -38,13 +43,22 @@ const CIA1_MAX_CONTROL_ADDR: usize = 0xdcff;
 const CIA2_MIN_CONTROL_ADDR: usize = 0xdd00;
 const CIA2_MAX_CONTROL_ADDR: usize = 0xddff;
 
+#[derive(PartialEq)]
+enum SystemMode {
+    Run,
+    DebugRun,
+    DebugStep,
+}
+
 pub struct Bus {
+    mode: SystemMode,
     ram: [u8; 65536],
     color_ram: [u8; 1024], // Only the 4 low bits of each byte are used
     kernal_rom: [u8; KERNAL_ROM_SIZE],
     basic_rom: [u8; BASIC_ROM_SIZE],
     char_rom: [u8; CHAR_ROM_SIZE],
 
+    cpu: Cpu,
     vic: Vic,
     sid: Sid,
     cia_1: Cia,
@@ -52,14 +66,16 @@ pub struct Bus {
 }
 
 impl Bus {
-    pub fn new() -> Bus {
+    pub fn new(debug: bool) -> Bus {
         Bus {
+            mode: if debug { SystemMode::DebugRun } else { SystemMode::Run },
             ram: [0u8; 65536],
             color_ram: [0u8; 1024],
             kernal_rom: [0u8; KERNAL_ROM_SIZE],
             basic_rom: [0u8; BASIC_ROM_SIZE],
             char_rom: [0u8; CHAR_ROM_SIZE],
 
+            cpu: Cpu::new(),
             vic: Vic::new(),
             sid: Sid::new(),
             cia_1: Cia::new(CIA1_MIN_CONTROL_ADDR),
@@ -87,8 +103,13 @@ impl Bus {
     
     // Read a byte from the given address
     pub fn read_byte(&self, addr: usize) -> u8 {
+        if addr == 0 {
+            return self.cpu.read_ddr();
+        } else if addr == 1 {
+            return self.cpu.read_dataport();
+        }
         // Determine whether to read from ROM or RAM
-        let rom_status = (self.ram[1] & 7);
+        let rom_status = (self.cpu.read_dataport() & 7);
         let kernal_rom_enabled = rom_status % 4 > 1;
         let basic_rom_enabled = rom_status % 4 == 3;
         let char_rom_enabled = rom_status < 4 && rom_status > 0;
@@ -130,22 +151,21 @@ impl Bus {
         }
     }
 
-    // Read a word (little endian) from the given address
-    pub fn read_word(&self, addr: usize) -> u16 {
-        let lo = self.read_byte(addr);
-        let hi = self.read_byte(addr + 1);
-        ((hi as u16) << 8) + lo as u16
-    }
-
     // Write a byte to the given address
     pub fn write_byte(&mut self, addr: usize, value: u8) {
-        let io_enabled = (self.ram[1] & 7) > 4;
-
-        if io_enabled && addr >= IO_START && addr <= IO_END{
-            self.io_write(addr, value);
+        if addr == 0 {
+            self.cpu.write_ddr(value);
+        } else if addr == 1 {
+            self.cpu.write_dataport(value);
         } else {
-            // System always writes to RAM even if it's masked by a ROM
-            self.ram[addr] = value;
+            let io_enabled = (self.cpu.read_dataport() & 7) > 4;
+
+            if io_enabled && addr >= IO_START && addr <= IO_END{
+                self.io_write(addr, value);
+            } else {
+                // System always writes to RAM even if it's masked by a ROM
+                self.ram[addr] = value;
+            }
         }
     }
 
@@ -163,6 +183,53 @@ impl Bus {
             self.cia_2.write_register(addr, value);
         } else {
             panic!("Unimplemented I/O address: ${:0>4X}", addr);
+        }
+    }
+
+    pub fn run(&mut self, clock_speed_mhz: u32) {
+        // Calculate the clock period in nanoseconds
+        let clock_period_ns = Duration::new(0, (1_000_000_000_000f32/(clock_speed_mhz as f32)) as u32);
+
+        self.cpu.reset();
+        loop {
+            let cycle_time = Instant::now();
+
+            // Read/write the CPU data bus
+            if self.cpu.addr_enable {
+                let addr = self.cpu.addr_bus as usize;
+                if self.cpu.rw {
+                    let byte = self.read_byte(addr);
+                    self.cpu.data_in(byte);
+                } else {
+                    let data = self.cpu.data_out();
+                    self.write_byte(addr, data);
+                }
+            }
+            if self.mode == SystemMode::DebugRun || self.mode == SystemMode::DebugStep {
+                println!("{:?}", self.cpu);
+            }
+
+            if self.mode == SystemMode::DebugRun || self.mode == SystemMode::DebugStep {
+                self.cpu.cycle(true);
+            } else {
+                self.cpu.cycle(false);
+            }
+
+            if self.mode == SystemMode::DebugStep {
+                let mut input = String::new();
+                match stdin().read_line(&mut input) {
+                    Ok(_) => { },
+                    Err(e) => { panic!("Error reading STDIN: {}", e); },
+                }
+            }
+
+            let elapsed = cycle_time.elapsed();
+            if elapsed >= clock_period_ns {
+                println!("SLOW CYCLE: {:?} / {:?} ns", elapsed, clock_period_ns);
+
+            } else {
+                sleep((clock_period_ns - elapsed));
+            }
         }
     }
 }
