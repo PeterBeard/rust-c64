@@ -14,7 +14,7 @@ use io::cia;
 use io::cia::Cia;
 
 use std::fs::File;
-use std::io::{Read, stdin};
+use std::io::{Read, Write, stdin, stdout};
 
 use std::time::{Instant, Duration};
 use std::thread::sleep;
@@ -43,7 +43,7 @@ const CIA1_MAX_CONTROL_ADDR: usize = 0xdcff;
 const CIA2_MIN_CONTROL_ADDR: usize = 0xdd00;
 const CIA2_MAX_CONTROL_ADDR: usize = 0xddff;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 enum SystemMode {
     Run,
     DebugRun,
@@ -68,7 +68,7 @@ pub struct Bus {
 impl Bus {
     pub fn new(debug: bool) -> Bus {
         Bus {
-            mode: if debug { SystemMode::DebugRun } else { SystemMode::Run },
+            mode: if debug { SystemMode::DebugStep } else { SystemMode::Run },
             ram: [0u8; 65536],
             color_ram: [0u8; 1024],
             kernal_rom: [0u8; KERNAL_ROM_SIZE],
@@ -160,7 +160,7 @@ impl Bus {
         } else {
             let io_enabled = (self.cpu.read_dataport() & 7) > 4;
 
-            if io_enabled && addr >= IO_START && addr <= IO_END{
+            if io_enabled && addr >= IO_START && addr <= IO_END {
                 self.io_write(addr, value);
             } else {
                 // System always writes to RAM even if it's masked by a ROM
@@ -205,29 +205,43 @@ impl Bus {
                     self.write_byte(addr, data);
                 }
             }
-            if self.mode == SystemMode::DebugRun || self.mode == SystemMode::DebugStep {
-                println!("{:?}", self.cpu);
-            }
 
-            if self.mode == SystemMode::DebugRun || self.mode == SystemMode::DebugStep {
-                self.cpu.cycle(true);
-            } else {
+
+            if self.mode == SystemMode::Run {
                 self.cpu.cycle(false);
-            }
-
-            if self.mode == SystemMode::DebugStep {
-                let mut input = String::new();
-                match stdin().read_line(&mut input) {
-                    Ok(_) => { },
-                    Err(e) => { panic!("Error reading STDIN: {}", e); },
+            } else {
+                println!("{:?}", self.cpu);
+                self.cpu.cycle(true);
+                if self.mode == SystemMode::DebugStep {
+                    print!("] ");
+                    stdout().flush();
+                    let mut input = String::new();
+                    match stdin().read_line(&mut input) {
+                        Ok(_) => { },
+                        Err(e) => { panic!("Error reading STDIN: {}", e); },
+                    }
+                    
+                    match input.trim() {
+                        "r" | "run" => {
+                            self.mode = SystemMode::DebugRun;
+                        },
+                        "h" | "help" => {
+                            println!("Help not implemented");
+                        },
+                        "" => {
+                        },
+                        _ => {
+                            println!("Invalid command");
+                        }
+                    }
                 }
             }
 
             let elapsed = cycle_time.elapsed();
-            if elapsed >= clock_period_ns {
-                println!("SLOW CYCLE: {:?} / {:?} ns", elapsed, clock_period_ns);
-
-            } else {
+            if self.mode != SystemMode::DebugStep && elapsed >= clock_period_ns {
+                println!("SLOW CYCLE [: {:?} / {:?} ns", elapsed, clock_period_ns);
+                println!("{:?}", self.cpu);
+            } else if self.mode != SystemMode::DebugStep {
                 sleep((clock_period_ns - elapsed));
             }
         }

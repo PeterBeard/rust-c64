@@ -4,5 +4,5 @@ version = "0.1.0"
 authors = ["Peter Beard <peter.b.beard+github@gmail.com>"]
 
 [dependencies]
-rand = "0.3.14"
 sdl = "0.3.6"
+getopts = "0.2"
