@@ -232,6 +232,20 @@ impl Cpu {
                 Fetch
             },
 
+            // BIT -- test bits against A
+            BIT => {
+                if debug {
+                    println!("BIT ${:0>2X}", self.read_data_bus());
+                }
+
+                let data = self.read_data_bus();
+                self.a &= data;
+                self.sr.overflow = (data & 0x80) == 0x80;
+                self.sr.determine_negative(data);
+                self.sr.determine_zero(self.a);
+                Fetch
+            },
+
             // BMI -- branch on minus
             BMI => {
                 if debug {
@@ -269,25 +283,64 @@ impl Cpu {
             },
 
             // BRK -- force break
-            /*
             BRK => {
                 if debug {
 					println!("BRK");
 				}
-                let pc = self.pc;
-                let sr = self.sr.to_u8() | 24;   // Set BRK flag in the stored SR
+                if self.state == Implied {
+                    self.stack_word_ready = false;
+                    self.stack_word = self.pc.wrapping_add(2);
+                    PushWordHi
+                } else if self.state == ToLoad {
+                    if !self.stack_word_ready {
+                        self.stack_word_ready = true;
 
-                self.push_word(ram, pc + 2);
-                self.push(ram, sr);
-                self.sr.int_disable = true;
+                        let sp = self.get_stack_addr();
+                        self.sp = self.sp.wrapping_sub(1);
 
-                // Read interrupt vector into PC
-                let hi = ram.read_byte(IRQ_VEC_HI_ADDR as usize);
-                let lo = ram.read_byte(IRQ_VEC_LO_ADDR as usize);
-                self.pc = ((hi as u16) << 8) + lo as u16;
-                SINGLE
+                        let sr = self.sr.to_u8() | 24;  // Set BRK flag in the stored SR
+                        self.set_data_bus(sr);
+                        self.sr.int_disable = true;
+
+                        Store
+                    } else {
+                        // Read interrupt vector
+                        self.pc = IRQ_VEC_LO_ADDR;
+                        self.set_addr_bus(IRQ_VEC_LO_ADDR);
+
+                        AddressLo
+                    }
+                } else {
+                    self.pc = self.addr_from_hi_lo();
+
+                    Fetch
+                }
+
             },
-            */
+
+            // BVC -- branck on overflow clear
+            BVC => {
+                if debug {
+					println!("BVC ${:0>2X}", self.read_data_bus());
+				}
+
+                if !self.sr.overflow {
+                    self.relative_branch();
+                }
+                Fetch
+            },
+
+            // BVS -- branch on overflow set
+            BVS => {
+                if debug {
+					println!("BVS ${:0>2X}", self.read_data_bus());
+				}
+
+                if self.sr.overflow {
+                    self.relative_branch();
+                }
+                Fetch
+            },
 
             // CLC -- clear carry flag
             CLC => {
@@ -307,6 +360,24 @@ impl Cpu {
                 Fetch
             },
 
+            // CLI -- clear interrupt disable
+            CLI => {
+                if debug {
+                    println!("CLI");
+                }
+                self.sr.int_disable = false;
+                Fetch
+            },
+
+            // CLV -- clear overflow
+            CLV => {
+                if debug {
+                    println!("CLV");
+                }
+                self.sr.overflow = false;
+                Fetch
+            },
+
             // CMP -- compare with accumulator
             CMP => {
                 if debug {
@@ -316,13 +387,34 @@ impl Cpu {
                 Fetch
             },
 
-            // CPX compare X to memory
+            // CPX -- compare X to memory
             CPX => {
                 if debug {
 					println!("CPX #${:0>2X}", self.data_bus);
 				}
                 self.sr.compare(&self.x, &self.data_bus);
                 Fetch
+            },
+
+            // CPY -- compare Y to memory
+            CPY => {
+                if debug {
+					println!("CPY #${:0>2X}", self.read_data_bus());
+				}
+                self.sr.compare(&self.y, &self.data_bus);
+                Fetch
+            },
+
+            // DEC -- decrement
+            DEC => {
+                if debug {
+					println!("DEC ${:0>2X}", self.addr_lo);
+				}
+                let data = self.read_data_bus().wrapping_sub(1);
+                self.sr.determine_negative(self.data_bus);
+                self.sr.determine_zero(self.data_bus);
+                self.set_data_bus(data);
+                Store
             },
 
             // DEX -- decrement X
@@ -344,6 +436,17 @@ impl Cpu {
                 self.y = self.y.wrapping_sub(1);
                 self.sr.determine_negative(self.y);
                 self.sr.determine_zero(self.y);
+                Fetch
+            },
+
+            // EOR -- A XOR value
+            EOR => {
+                if debug {
+					println!("EOR ${:0>2X}", self.read_data_bus());
+				}
+                self.a ^= self.read_data_bus();
+                self.sr.determine_zero(self.a);
+                self.sr.determine_negative(self.a);
                 Fetch
             },
 
@@ -384,9 +487,9 @@ impl Cpu {
             // JMP -- jump
             JMP => {
                 if debug {
-					println!("JMP ${:0>4X}", self.addr_bus);
+					println!("JMP ${:0>4X}", self.addr_from_hi_lo());
 				}
-                self.pc = self.addr_bus;
+                self.pc = self.addr_from_hi_lo();
                 Fetch
             },
 
@@ -433,6 +536,28 @@ impl Cpu {
                 self.sr.determine_negative(self.y);
                 Fetch
             },
+            
+            // LSR -- shift right one
+            LSR => {
+                if debug {
+					println!("LSR");
+				}
+                if self.state == Implied {
+                    self.sr.determine_carry(self.a);
+                    self.a >>= 1;
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    Fetch
+                } else {
+                    let data = self.read_data_bus();
+                    self.sr.determine_carry(data);
+                    let data = data >> 1;
+                    self.set_data_bus(data);
+                    self.sr.determine_zero(data);
+                    self.sr.determine_negative(data);
+                    Store
+                }
+            },
 
             // NOP -- no op
             NOP => {
@@ -461,6 +586,54 @@ impl Cpu {
                 self.set_addr_bus(sp);
                 self.sp  = self.sp.wrapping_sub(1);
                 Store
+            },
+
+            // PHP -- push SR on stack
+            PHP => {
+                if debug {
+					println!("PHP");
+				}
+                let sr = self.sr.to_u8();
+                self.set_data_bus(sr);
+                let sp = self.get_stack_addr();
+                self.set_addr_bus(sp);
+                self.sp  = self.sp.wrapping_sub(1);
+                Store
+            },
+
+            // PLA -- pull A from stack
+            PLA => {
+                if debug {
+                    println!("PLA");
+                }
+                if self.state == Implied {
+                    self.sp.wrapping_add(1);
+                    let sp = self.get_stack_addr();
+                    self.set_addr_bus(sp);
+                    Load
+                } else {
+                    self.a = self.read_data_bus();
+                    self.sr.determine_zero(self.a);
+                    self.sr.determine_negative(self.a);
+                    Fetch
+                }
+            },
+
+            // PLP -- pull SR from stack
+            PLP => {
+                if debug {
+                    println!("PLA");
+                }
+                if self.state == Implied {
+                    self.sp.wrapping_add(1);
+                    let sp = self.get_stack_addr();
+                    self.set_addr_bus(sp);
+                    Load
+                } else {
+                    let data = self.read_data_bus();
+                    self.sr.from_u8(data);
+                    Fetch
+                }
             },
             
             // ROL -- rotate left
@@ -507,6 +680,11 @@ impl Cpu {
                 }
             },
 
+            // RTI -- return from interrupt
+            RTI => {
+                panic!();
+            },
+
             // RTS -- return from subroutine
             RTS => {
                 if debug {
@@ -521,6 +699,50 @@ impl Cpu {
                 }
             },
 
+            // SBC -- subtract with carry
+            SBC => {
+                if debug {
+                    println!("SBC #${:0>2X}", self.read_data_bus());
+                }
+
+                let data = if self.sr.carry {
+                    !self.read_data_bus()
+                } else {
+                    (!self.read_data_bus()).wrapping_add(1)
+                };
+
+                // Determine whether a borrow will be required
+                self.sr.carry = self.read_data_bus() > self.a;
+
+                self.a = self.a.wrapping_add(data);
+
+                self.sr.determine_negative(self.a);
+                self.sr.determine_zero(self.a);
+                let result = ((self.a as i16) - (self.read_data_bus() as i16));
+                self.sr.overflow = result < -128 || result > 127;
+                    
+                Fetch
+            },
+
+            // SEC -- set carry flag
+            SEC => {
+                if debug {
+                    println!("SEC");
+                }
+                self.sr.carry = true;
+                Fetch
+            },
+
+            // SED -- set decimal mode
+            SED => {
+                if debug {
+                    println!("SED");
+                }
+                self.sr.decimal = true;
+                Fetch
+            },
+
+
             // SEI -- disable interrupts
             SEI => {
                 if debug {
@@ -533,7 +755,7 @@ impl Cpu {
             // STA -- store A
             STA => {
                 if debug {
-					println!("STA ${:0>2X}", self.addr_lo);
+					println!("STA ${:0>4X}", self.addr_bus);
 				}
                 let a = self.a;
                 self.set_data_bus(a);
@@ -543,7 +765,7 @@ impl Cpu {
             // STX -- store x
             STX => {
                 if debug {
-					println!("STX ${:0>2X}", self.addr_lo);
+					println!("STX ${:0>4X}", self.addr_bus);
 				}
                 let x = self.x;
                 self.set_data_bus(x);
@@ -625,6 +847,103 @@ impl Cpu {
             },
 
             // - Undocumented Instructions - //
+            
+            // ALR -- combination of AND and LSR
+            ALR => {
+                if debug {
+                    println!("!! ALR $#{:0>2X}", self.read_data_bus());
+                }
+                self.a &= self.read_data_bus();
+                self.sr.determine_carry(self.a);
+                self.a >>= 1;
+                self.sr.determine_zero(self.a);
+                self.sr.determine_negative(self.a);
+
+                Fetch
+            },
+
+            // ANC -- AND with carry
+            ANC => {
+                if debug {
+                    println!("!! ANC $#{:0>2X}", self.read_data_bus());
+                }
+                self.a &= self.read_data_bus();
+                self.sr.determine_zero(self.a);
+                self.sr.determine_negative(self.a);
+                self.sr.carry = self.sr.negative;
+
+                Fetch
+            },
+
+            // ARR -- Combination of AND and ROR
+            ARR => {
+                if debug {
+                    println!("!! ARR $#{:0>2X}", self.read_data_bus());
+                }
+                self.a &= self.read_data_bus();
+                self.sr.determine_negative(self.a);
+
+                self.a = self.a.rotate_right(1);
+                self.sr.determine_zero(self.a);
+                self.sr.carry = self.a & 0x40 == 0x40;
+                self.sr.overflow = (self.a ^ (self.a << 1)) & 0x20 == 0x20;
+
+                Fetch
+            },
+
+            // AXS -- Combination of AND and SBC without borrow
+            AXS => {
+                if debug {
+                    println!("!! AXS $#{:0>2X}", self.read_data_bus());
+                }
+                self.a &= self.x;
+                self.a = self.a.wrapping_sub(self.read_data_bus());
+                self.sr.determine_negative(self.a);
+                self.sr.determine_zero(self.a);
+                self.sr.determine_carry(self.a);
+
+                Fetch
+            },
+
+            // DCP -- DEC then CMP
+            DCP => {
+                if debug {
+                    println!("!! DCP");
+                }
+                self.a = self.a.wrapping_sub(1);
+                let data = self.read_data_bus().wrapping_sub(1);
+
+                self.sr.determine_negative(data);
+                self.sr.determine_zero(data);
+
+                self.sr.compare(&self.a, &data);
+
+                Fetch
+            },
+
+            // LAX -- LDA then TAX
+            LAX => {
+                if debug {
+                    println!("!! LAX $#{:0>2X}", self.read_data_bus());
+                }
+                self.a = self.read_data_bus();
+                self.x = self.read_data_bus();
+                self.sr.determine_zero(self.x);
+                self.sr.determine_negative(self.x);
+
+                Fetch
+            },
+
+            // SAX -- store A & X
+            SAX => {
+                if debug {
+                    println!("!! SAX");
+                }
+                let ax = self.a & self.x;
+                self.set_data_bus(ax);
+
+                Store
+            },
 
             // KIL -- halt the CPU
             KIL => {
@@ -632,8 +951,8 @@ impl Cpu {
             },
 
             _ => {
-                panic!("Instruction not implemented: {:?}", self.curr_op);
-            },
+                panic!("Unimplemented instruction {:?}", self.curr_op)
+            }
         }
     }
 
@@ -734,9 +1053,14 @@ impl Cpu {
         match self.state {
             ToLoad => {
                 // Switch to read mode
-                let pc = self.pc;
-                self.set_addr_bus(pc);
-                self.state = Fetch;
+                // BRK is a special case
+                if self.curr_op != Opcode::BRK {
+                    let pc = self.pc;
+                    self.set_addr_bus(pc);
+                    self.state = Fetch;
+                } else {
+                    self.state = self.do_instr(debug);
+                }
             },
             Fetch => {
                 self.curr_op = Opcode::from_u8(self.read_data_bus());
