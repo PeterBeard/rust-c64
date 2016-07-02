@@ -1,4 +1,4 @@
-# rust-c64
+# rust-c64[![Build Status](https://travis-ci.org/PeterBeard/rust-c64.svg?branch=master)](https://travis-ci.org/PeterBeard/rust-c64) 
 A Commodore 64 emulator written in Rust.
 
 # C64 Documentation
