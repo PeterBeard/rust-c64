@@ -173,6 +173,7 @@ impl Cpu {
 
             // ASL -- shift left one
             ASL => {
+                // TODO: This should take an extra cycle when using absolute, x addressing
                 if debug {
 					println!("ASL");
 				}
@@ -1356,6 +1357,8 @@ mod tests {
 
             if cpu.pc != super::RESET_VECTOR_ADDR && cpu.state == super::CpuState::Fetch {
                 break;
+            } else if cpu.state == super::CpuState::Implied {
+                break;
             }
 
             if cpu.rw {
@@ -1368,6 +1371,7 @@ mod tests {
         }
     }
     // Test cycle-accuracy of instructions
+    // ADC
     #[test]
     fn adc_imm_cycles() {
         let mut cpu = Cpu::new();
@@ -1446,5 +1450,137 @@ mod tests {
         run_program(&program[..], &mut cpu);
 
         assert_eq!(5, cpu.cycles)
+    }
+
+    // AND
+    #[test]
+    fn and_imm_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x29, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles)
+    }
+
+    #[test]
+    fn and_zp_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x25, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles)
+    }
+
+    #[test]
+    fn and_zpx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x35, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn and_abs_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x2d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn and_absx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x3d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn and_absy_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x39, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn and_indx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x21, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles)
+    }
+
+    #[test]
+    fn and_indy_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x31, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles)
+    }
+
+    // ASL
+    //#[test]
+    fn asl_impl_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x0a];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn asl_zp_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x06, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn asl_zpx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x16, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn asl_abs_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x0e, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    //#[test]
+    fn asl_absx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x1e, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(7, cpu.cycles);
     }
 }
