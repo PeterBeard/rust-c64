@@ -9,10 +9,7 @@ mod status_register;
 use self::opcode::Opcode;
 use self::status_register::StatusRegister;
 
-use bus::Bus;
 use std::fmt;
-
-use std::time::Instant;
 
 const RESET_VECTOR_ADDR: u16 = 0xfce2;
 const STACK_START_ADDR: u16 = 0x0100;
@@ -39,13 +36,19 @@ enum CpuState {
 
     AddressZeropage,
     AddressZeropageX,
+    AddressZeropageXAdd,
     AddressZeropageY,
+    AddressZeropageYAdd,
 
-    AddressIndirect,
-    AddressIndirectX,
-    AddressIndirectY,
-    AddressIndirectLo,
-    AddressIndirectHi,
+    AddressIndirectIndexed,
+    AddressIndirectIndexedLo,
+    AddressIndirectIndexedHi,
+    AddressIndirectIndexedPageCross,
+
+    AddressIndexedIndirect,
+    AddressIndexedIndirectAdd,
+    AddressIndexedIndirectLo,
+    AddressIndexedIndirectHi,
 
     Immediate,
     Implied,
@@ -124,12 +127,6 @@ impl Cpu {
         self.rw = true;
 
         self.state = CpuState::Fetch;
-    }
-
-    // Fetch the next instruction from RAM
-    fn fetch_instr(&mut self) {
-        let pc = self.pc;
-        self.set_addr_bus(pc);
     }
 
     // Write an address to the address bus
@@ -297,6 +294,7 @@ impl Cpu {
 
                         let sp = self.get_stack_addr();
                         self.sp = self.sp.wrapping_sub(1);
+                        self.set_addr_bus(sp);
 
                         let sr = self.sr.to_u8() | 24;  // Set BRK flag in the stored SR
                         self.set_data_bus(sr);
@@ -495,7 +493,6 @@ impl Cpu {
 
             // JSR -- jump and save return addr
             JSR => {
-                let old_addr = self.pc + 2;
                 self.stack_word = self.pc;
                 self.pc = self.addr_from_hi_lo();
                 if debug {
@@ -718,7 +715,7 @@ impl Cpu {
 
                 self.sr.determine_negative(self.a);
                 self.sr.determine_zero(self.a);
-                let result = ((self.a as i16) - (self.read_data_bus() as i16));
+                let result =(self.a as i16) - (self.read_data_bus() as i16);
                 self.sr.overflow = result < -128 || result > 127;
                     
                 Fetch
@@ -978,9 +975,9 @@ impl Cpu {
             },
             1 | 3 => {
                 if row % 2 == 1 {
-                    AddressIndirectY
+                    AddressIndirectIndexed
                 } else {
-                    AddressIndirectX
+                    AddressIndexedIndirect
                 }
             },
             2 => {
@@ -1090,13 +1087,29 @@ impl Cpu {
             AddressZeropage | AddressZeropageX | AddressZeropageY => {
                 self.addr_hi = 0u8;
                 self.addr_lo = self.read_data_bus();
-                if self.state == AddressZeropageX {
-                    self.addr_lo = self.addr_lo.wrapping_add(self.x);
-                } else if self.state == AddressZeropageY {
-                    self.addr_lo = self.addr_lo.wrapping_add(self.y);
-                }
                 let addr = self.addr_from_hi_lo();
                 self.set_addr_bus(addr);
+
+                if self.state == AddressZeropageX {
+                    self.state = AddressZeropageXAdd;
+                } else if self.state == AddressZeropageY {
+                    self.state = AddressZeropageYAdd;
+                } else {
+                    self.state = Load;
+                }
+            },
+            AddressZeropageXAdd => {
+                self.addr_lo = self.addr_lo.wrapping_add(self.x);
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                self.state = Load;
+            },
+            AddressZeropageYAdd => {
+                self.addr_lo = self.addr_lo.wrapping_add(self.y);
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
                 self.state = Load;
             },
             AddressLo => {
@@ -1115,18 +1128,21 @@ impl Cpu {
                 self.addr_hi = self.read_data_bus();
                 let addr = self.addr_from_hi_lo();
                 self.set_addr_bus(addr);
+
                 self.state = Load;
             },
             AddressHiX => {
                 self.addr_hi = self.read_data_bus();
                 let addr = self.addr_from_hi_lo().wrapping_add(self.x as u16);
                 self.set_addr_bus(addr);
+
                 self.state = Load;
             },
             AddressHiY => {
                 self.addr_hi = self.read_data_bus();
                 let addr = self.addr_from_hi_lo().wrapping_add(self.y as u16);
                 self.set_addr_bus(addr);
+
                 self.state = Load;
             },
             PushWordHi => {
@@ -1137,6 +1153,71 @@ impl Cpu {
                 self.sp = self.sp.wrapping_sub(1);
 
                 self.state = PushWordLo;
+            },
+            AddressIndexedIndirect => {
+                self.addr_hi = 0u8;
+                self.addr_lo = self.read_data_bus();
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                self.state = AddressIndexedIndirectAdd;
+            },
+            AddressIndexedIndirectAdd => {
+                let addr = self.addr_bus.wrapping_add(self.x as u16);
+                self.set_addr_bus(addr);
+
+                self.state = AddressIndexedIndirectLo;
+            },
+            AddressIndexedIndirectLo => {
+                self.addr_lo = self.read_data_bus();
+                let addr = self.addr_bus.wrapping_add(1);
+                self.set_addr_bus(addr);
+
+                self.state = AddressIndexedIndirectHi;
+            },
+            AddressIndexedIndirectHi => {
+                self.addr_hi = self.read_data_bus();
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                self.state = Load;
+            },
+            AddressIndirectIndexed => {
+                self.addr_hi = 0u8;
+                self.addr_lo = self.read_data_bus();
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                self.state = AddressIndirectIndexedLo;
+            },
+            AddressIndirectIndexedLo => {
+                self.addr_lo = self.addr_lo.wrapping_add(1);
+                let addr = self.addr_from_hi_lo();
+
+                self.addr_lo = self.read_data_bus();
+                self.set_addr_bus(addr);
+
+                self.state = AddressIndirectIndexedHi;
+            },
+            AddressIndirectIndexedHi => {
+                self.addr_hi = self.read_data_bus();
+                self.addr_lo = self.addr_lo.wrapping_add(self.y);
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                // Determine whether we crossed to the next page
+                if (self.addr_lo as u16) + (self.y as u16) > 0xff {
+                    self.state = AddressIndirectIndexedPageCross;
+                } else {
+                    self.state = Load;
+                }
+            },
+            AddressIndirectIndexedPageCross => {
+                self.addr_hi = self.addr_hi.wrapping_add(1);
+                let addr = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                self.state = Load;
             },
             PushWordLo => {
                 let sp = self.get_stack_addr();
@@ -1169,45 +1250,6 @@ impl Cpu {
 
                 self.stack_word_ready = false;
                 self.stack_word = 0u16;
-            },
-            AddressIndirect => {
-                self.addr_hi = 0;
-                self.addr_lo = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndirectLo;
-            },
-            AddressIndirectX => {
-                self.addr_hi = 0;
-                self.addr_lo = self.read_data_bus().wrapping_add(self.x);
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndirectLo;
-            },
-            AddressIndirectY => {
-                self.addr_hi = 0;
-                self.addr_lo = self.read_data_bus().wrapping_add(self.y);
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndirectLo;
-            },
-            AddressIndirectLo => {
-                self.addr_lo = self.read_data_bus();
-
-                let hi_addr = self.addr_bus.wrapping_add(1);
-                self.set_addr_bus(hi_addr);
-
-                self.state = AddressIndirectHi;
-            },
-            AddressIndirectHi => {
-                self.addr_hi = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = Load;
             },
             Halt => {
                 panic!("CPU halted");
@@ -1258,10 +1300,10 @@ impl Cpu {
 
     fn increment_pc(&mut self) {
         use self::CpuState::*;
-        if self.state != ToLoad && self.state != Load && self.state != Store &&
-            self.state != PushWordLo && self.state != PushWordHi && self.state != PullWordLo &&
-            self.state != PullWordHi && self.state != AddressIndirect && self.state != AddressIndirectLo &&
-            self.state != AddressIndirectHi {
+        if self.state == Fetch || self.state == AddressLo || self.state == AddressLoX || 
+            self.state == AddressLoY || self.state == AddressHi || self.state == AddressHiX ||
+            self.state == AddressHiY || self.state == AddressZeropage || self.state == AddressZeropageX ||
+            self.state == AddressZeropageY || self.state == Immediate || self.state == Implied {
             self.pc = self.pc.wrapping_add(1);
             let pc = self.pc;
             self.set_addr_bus(pc);
@@ -1292,5 +1334,117 @@ impl fmt::Debug for Cpu {
                self.cycles, self.pc, self.a, self.x, self.y, self.sp, self.sr.to_u8(),
                self.data_bus, self.addr_bus, self.curr_op, self.rw, self.state
                )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Run a program consisting of a single instruction
+    fn run_program(program: &[u8], cpu: &mut Cpu) {
+        let mut ram: [u8; 65536] = [0u8; 65536];
+
+        for addr in 0..program.len() {
+            ram[super::RESET_VECTOR_ADDR as usize + addr] = program[addr];
+        }
+
+        cpu.reset();
+
+        loop {
+            let addr = cpu.addr_bus as usize;
+
+            if cpu.pc != super::RESET_VECTOR_ADDR && cpu.state == super::CpuState::Fetch {
+                break;
+            }
+
+            if cpu.rw {
+                cpu.data_in(ram[addr]);
+            } else {
+                ram[addr] = cpu.data_out();
+            }
+            println!("{:?}", cpu);
+            cpu.cycle(false);
+        }
+    }
+    // Test cycle-accuracy of instructions
+    #[test]
+    fn adc_imm_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x69, 0x10];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_zp_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x65, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_zpx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x75, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_abs_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x6d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_absx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x7d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_absy_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x79, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_indx_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x61, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles)
+    }
+
+    #[test]
+    fn adc_indy_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x71, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles)
     }
 }
