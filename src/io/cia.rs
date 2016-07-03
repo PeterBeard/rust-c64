@@ -52,7 +52,7 @@ impl Cia {
 
     // Translate a memory address to a register index
     fn translate_addr(&self, addr: usize) -> u8 {
-        if addr >= (self.base_addr + CONTROL_REG_COUNT) || addr < self.base_addr {
+        if addr < self.base_addr {
             panic!("Invalid address for CIA control register: ${:0>4X}", addr);
         }
         ((addr - self.base_addr) % CONTROL_REG_COUNT) as u8

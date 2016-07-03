@@ -1181,6 +1181,7 @@ impl Cpu {
                 let addr = self.addr_from_hi_lo();
                 self.set_addr_bus(addr);
 
+                self.pc = self.pc.wrapping_add(1);
                 self.state = Load;
             },
             AddressIndirectIndexed => {
@@ -1212,6 +1213,7 @@ impl Cpu {
                 } else {
                     self.state = Load;
                 }
+                self.pc = self.pc.wrapping_add(1);
             },
             AddressIndirectIndexedPageCross => {
                 self.addr_hi = self.addr_hi.wrapping_add(1);
@@ -1288,7 +1290,7 @@ impl Cpu {
 
     pub fn write_dataport(&mut self, value: u8) {
         // TODO: This is not quite how the DDR masking works
-        self.dataport = (self.data_direction_reg & value);
+        self.dataport = self.data_direction_reg & value;
     }
 
     pub fn read_dataport(&self) -> u8 {

@@ -88,17 +88,17 @@ impl StatusRegister {
 
     // Determine whether a number is zero and set the corresponding status bit
     pub fn determine_zero(&mut self, value: u8) {
-        self.zero_result = (value == 0);
+        self.zero_result = value == 0;
     }
 
     // Determine whether a number is negative and set the corresponding status bit
     pub fn determine_negative(&mut self, value: u8) {
-        self.negative = (value & 0x80 == 0x80);
+        self.negative = value & 0x80 == 0x80;
     }
 
     // Determine whether to set the carry bit
     pub fn determine_carry(&mut self, value: u8) {
-        self.carry = (value & 0x80 == 0x80);
+        self.carry = value & 0x80 == 0x80;
     }
 }
 
