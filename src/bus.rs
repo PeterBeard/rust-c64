@@ -10,7 +10,6 @@ use io::vic::Vic;
 use io::sid;
 use io::sid::Sid;
 
-use io::cia;
 use io::cia::Cia;
 
 use std::fs::File;
@@ -108,26 +107,20 @@ impl Bus {
         } else if addr == 1 {
             return self.cpu.read_dataport();
         }
-        // Determine whether to read from ROM or RAM
-        let rom_status = (self.cpu.read_dataport() & 7);
-        let kernal_rom_enabled = rom_status % 4 > 1;
-        let basic_rom_enabled = rom_status % 4 == 3;
-        let char_rom_enabled = rom_status < 4 && rom_status > 0;
-        let io_enabled = rom_status > 4;
 
-        if kernal_rom_enabled && addr >= KERNAL_ROM_START && addr < KERNAL_ROM_START + KERNAL_ROM_SIZE
+        if self.cpu.krom_enabled() && addr >= KERNAL_ROM_START && addr < KERNAL_ROM_START + KERNAL_ROM_SIZE
         {
             let offset_addr = addr - KERNAL_ROM_START;
             self.kernal_rom[offset_addr]
 
-        } else if basic_rom_enabled && addr >= BASIC_ROM_START && addr < BASIC_ROM_START + BASIC_ROM_SIZE {
+        } else if self.cpu.brom_enabled() && addr >= BASIC_ROM_START && addr < BASIC_ROM_START + BASIC_ROM_SIZE {
             let offset_addr = addr - BASIC_ROM_START;
             self.basic_rom[offset_addr]
 
-        } else if char_rom_enabled && addr >= CHAR_ROM_START && addr < CHAR_ROM_START + CHAR_ROM_SIZE {
+        } else if self.cpu.crom_enabled() && addr >= CHAR_ROM_START && addr < CHAR_ROM_START + CHAR_ROM_SIZE {
             let offset_addr = addr - CHAR_ROM_START;
             self.char_rom[offset_addr]
-        } else if io_enabled && addr >= IO_START && addr <= IO_END {
+        } else if self.cpu.io_enabled() && addr >= IO_START && addr <= IO_END {
             self.io_read(addr)
         } else {
             self.ram[addr]
@@ -186,32 +179,79 @@ impl Bus {
         }
     }
 
+    // Convert a 14-bit VIC-II address to a 16-bit address
+    fn convert_vic_ii_addr(&self, addr: u16) -> usize {
+        // Two high bits come from port A on CIA 2
+        let high_bits = (!self.read_byte(CIA2_MIN_CONTROL_ADDR)) & 0x03;
+        let bank = 0x4000 * (high_bits as u16);
+        (bank + (addr & 0x3ff)) as usize
+    }
+
     pub fn run(&mut self, clock_speed_mhz: u32) {
         // Calculate the clock period in nanoseconds
         let clock_period_ns = Duration::new(0, (1_000_000_000_000f32/(clock_speed_mhz as f32)) as u32);
 
         self.cpu.reset();
+        let mut cycles: u64 = 0;
+        let mut total_time = 0f32;
+        let mut speed = 0f32;
+
         loop {
             let cycle_time = Instant::now();
 
-            // Read/write the CPU data bus
-            if self.cpu.addr_enable {
-                let addr = self.cpu.addr_bus as usize;
-                if self.cpu.rw {
-                    let byte = self.read_byte(addr);
-                    self.cpu.data_in(byte);
+            // Run the VIC-II
+            let addr = self.convert_vic_ii_addr(self.vic.read_addr_bus());
+            let byte = self.read_byte(addr);
+            let color = self.color_ram[addr & 0x03ff];  // Lowest 10 bits of addr always point to color RAM
+
+            self.vic.data_in(byte);
+            self.vic.color_in(color);
+
+            if self.mode == SystemMode::Run {
+                self.vic.rising_edge(false);
+            } else {
+                self.vic.rising_edge(true);
+            }
+
+            // Is the CPU allowed to use the bus or does the VIC need both clock edges?
+            if self.vic.aec() {
+                if !self.vic.irq() && self.vic.rdy() {
+                    self.cpu.trigger_interrupt();
+                }
+
+                // Read/write the CPU data bus
+                if self.cpu.addr_enable {
+                    let addr = self.cpu.addr_bus as usize;
+                    if self.cpu.rw {
+                        let byte = self.read_byte(addr);
+                        self.cpu.data_in(byte);
+                    } else {
+                        let data = self.cpu.data_out();
+                        self.write_byte(addr, data);
+                    }
+                }
+                if self.mode == SystemMode::Run {
+                    self.cpu.cycle(false);
                 } else {
-                    let data = self.cpu.data_out();
-                    self.write_byte(addr, data);
+                    self.cpu.cycle(true);
+                }
+            } else {
+                if self.mode == SystemMode::Run {
+                    self.vic.falling_edge(false);
+                } else {
+                    self.vic.falling_edge(true);
                 }
             }
 
 
-            if self.mode == SystemMode::Run {
-                self.cpu.cycle(false);
-            } else {
+            if self.mode != SystemMode::Run {
+                println!("----------");
+                let speed = (cycles as f32) / total_time;
+                println!("  Clock speed: {:8.3} kHz", speed/1000f32);
                 println!("{:?}", self.cpu);
-                self.cpu.cycle(true);
+                println!("{:?}", self.vic);
+                println!("----------");
+
                 if self.mode == SystemMode::DebugStep {
                     print!("] ");
                     stdout().flush();
@@ -235,15 +275,18 @@ impl Bus {
                         }
                     }
                 }
-            }
+            } else {
+                let elapsed = cycle_time.elapsed();
+                if elapsed >= clock_period_ns {
+                    //println!("SLOW CYCLE [: {:?} / {:?} ns", elapsed, clock_period_ns);
+                    //println!("{:?}", self.cpu);
+                } else {
+                    sleep((clock_period_ns - elapsed));
+                }
 
-            let elapsed = cycle_time.elapsed();
-            if self.mode != SystemMode::DebugStep && elapsed >= clock_period_ns {
-                println!("SLOW CYCLE [: {:?} / {:?} ns", elapsed, clock_period_ns);
-                println!("{:?}", self.cpu);
-            } else if self.mode != SystemMode::DebugStep {
-                sleep((clock_period_ns - elapsed));
             }
+            total_time += (cycle_time.elapsed().subsec_nanos() as f32) / 1_000_000_000f32;
+            cycles = cycles.wrapping_add(1);
         }
     }
 }

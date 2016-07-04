@@ -3,11 +3,27 @@
 //
 // Functions and datatypes relating to the VIC-II video chip
 
+use std::fmt;
+
 pub const MIN_CONTROL_ADDR: usize = 0xd000;
 pub const MAX_CONTROL_ADDR: usize = 0xd3ff;
 const CONTROL_REG_COUNT: usize = 0x40;
 
+// TODO: Add code for NTSC
+const HORZ_CYCLE_COUNT: u8 = 63;    // Number of cycles per line
+
+#[derive(Eq, PartialEq, Debug)]
+enum VicState {
+    Idle,
+    MatrixRead,
+}
+
 pub struct Vic {
+    // Output pins (active low)
+    irq: bool,  // IRQ pin triggers interrupts in the CPU
+    rdy: bool,  // RDY stuns the CPU when the VIC needs more bus cycles
+    aec: bool,  // AEC deactivates the CPU address bus
+
     // Registers
     sx0: u8,        // Sprite 0 x coord
     sy0: u8,        // Sprite 0 y coord
@@ -56,11 +72,24 @@ pub struct Vic {
     s5c: u8,        // Sprite 5 color
     s6c: u8,        // Sprite 6 color
     s7c: u8,        // Sprite 7 color
+
+    state: VicState,// Current state of the processor
+    addr_bus: u16,  // Address bus (only the lower 14 bits are used)
+    data_bus: u16,   // Data bus -- lower nybble of upper byte is for color ram
+    matrix_pos: u16,// Current position in the video matrix
+
+    xpos: u8,       // X-position on the current raster line
+    cycles: u64,    // Number of cycles since startup
+    raster_int: u8, // Value of raster to interrupt on
 }
 
 impl Vic {
     pub fn new() -> Vic {
         Vic {
+            irq: true,
+            rdy: true,
+            aec: true,
+
             sx0: 0,
             sy0: 0,
             sx1: 0,
@@ -107,7 +136,16 @@ impl Vic {
             s4c: 0,
             s5c: 0,
             s6c: 0,
-            s7c: 0
+            s7c: 0,
+
+            state: VicState::Idle,
+            addr_bus: 0x3fffu16,
+            data_bus: 0u16,
+            matrix_pos: 0u16,
+
+            xpos: 0u8,
+            raster_int: 0xff,
+            cycles: 0u64,
         }
     }
 
@@ -196,7 +234,7 @@ impl Vic {
             15 => { self.sy7 = value; },
             16 => { self.msbx = value; },
             17 => { self.cr1 = value | 0xc0; },
-            18 => { self.raster = value; },
+            18 => { self.raster_int = value; },
             19 => { self.lpx = value; },
             20 => { self.lpy = value; },
             21 => { self.s_enable = value; },
@@ -224,8 +262,102 @@ impl Vic {
             43 => { self.s4c = value | 0xf0; },
             44 => { self.s5c = value | 0xf0; },
             45 => { self.s6c = value | 0xf0; },
-            46 => { self.s7c = value | 0xf0; }
+            46 => { self.s7c = value | 0xf0; },
             _ => { /* ignore writes to non-existent registers */ },
         }
     }
+
+    pub fn read_addr_bus(&self) -> u16 {
+        // Only use the lower 14 bits of the address
+        self.addr_bus & 0x40
+    }
+
+    // Calculate the current 14-bit video matrix address
+    fn matrix_addr(&self) -> u16 {
+        let addr = ((self.mem & 0xf0) as u16) << 6;
+        addr + (self.matrix_pos & 0x3ff)
+    }
+
+    // Calculate a 14-bit character pointer address
+    fn char_addr(&self, pointer: u8) -> u16 {
+        let addr = ((self.mem & 0x0e) as u16) << 10;
+        let addr = addr + ((pointer as u16) << 3);
+        addr + (self.raster % 8) as u16
+    }
+
+    pub fn rising_edge(&mut self, debug: bool) {
+        use self::VicState::*;
+
+        self.aec = false;
+
+        match self.state {
+            Idle => {
+                self.state = MatrixRead;
+            },
+            MatrixRead => {
+                self.addr_bus = self.matrix_addr();
+                self.matrix_pos = self.matrix_pos.wrapping_add(1);
+            },
+        }
+
+        if self.raster == self.raster_int {
+            // Do interrupt
+        }
+        self.xpos = self.xpos.wrapping_add(1);
+        if self.xpos == HORZ_CYCLE_COUNT {
+            self.xpos = 0;
+            self.raster = self.raster.wrapping_add(1);
+        }
+
+        self.aec = true;
+        self.cycles = self.cycles.wrapping_add(1);
+    }
+
+    pub fn falling_edge(&mut self, debug: bool) {
+
+    }
+
+    // Write a color nybble to the data bus
+    pub fn color_in(&mut self, byte: u8) {
+        self.data_bus &= 0x00ff;
+        self.data_bus &= ((byte as u16) & 0x0f) << 8;
+    }
+
+    // Write a byte to the data bus
+    pub fn data_in(&mut self, byte: u8) {
+        self.data_bus &= 0x0f00;
+        self.data_bus &= (byte as u16);
+    }
+
+    // Read the color nybble of the data bus
+    fn read_color_nybble(&self) -> u8 {
+        ((self.data_bus & 0x0f00) >> 8) as u8
+    }
+
+    // Read the low byte of the data bus
+    fn read_data_bus(&self) -> u8 {
+        (self.data_bus & 0xff) as u8
+    }
+
+    pub fn irq(&self) -> bool {
+        self.irq
+    }
+
+    pub fn rdy(&self) -> bool {
+        self.rdy
+    }
+
+    pub fn aec(&self) -> bool {
+        self.aec
+    }
+}
+
+impl fmt::Debug for Vic {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+               "  Cycle {:0>5} :: AB: ${:0>4X} // DB: ${:0>3X} // X: ${:0>2X} // Raster: ${:0>2X} // S: {:?}",
+               self.cycles, self.addr_bus, self.data_bus, self.xpos, self.raster, self.state
+               )
+    }
+
 }
