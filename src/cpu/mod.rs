@@ -1049,7 +1049,7 @@ impl Cpu {
             0xc | 0xd  => {
                 if row % 2 == 1 {
                     AddressLoX
-                } else if row == 6 {
+                } else if row == 6 && col == 0xc {
                     AddressIndirectLo
                 } else {
                     AddressLo
@@ -1072,10 +1072,6 @@ impl Cpu {
 
     pub fn cycle(&mut self, debug: bool) {
         use self::CpuState::*;
-
-        if self.pc < 0xb000 {
-            panic!("Out of KERNAL top");
-        }
 
         self.increment_pc();
         match self.state {
