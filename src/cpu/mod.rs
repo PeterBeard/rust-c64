@@ -19,6 +19,10 @@ const IRQ_VEC_HI_ADDR: u16 = 0xffff;
 
 #[derive(Eq, PartialEq, Debug)]
 enum CpuState {
+    Interrupt,
+    InterruptLo,
+    InterruptHi,
+
     Fetch,
     Load,
     Store,
@@ -40,6 +44,9 @@ enum CpuState {
     AddressZeropageY,
     AddressZeropageYAdd,
 
+    AddressIndirectLo,
+    AddressIndirectHi,
+
     AddressIndirectIndexed,
     AddressIndirectIndexedLo,
     AddressIndirectIndexedHi,
@@ -57,6 +64,10 @@ enum CpuState {
 }
 
 pub struct Cpu {
+    // Input pins
+    irq: bool,
+
+    // Registers
     pc: u16,
     a: u8,
     x: u8,
@@ -64,6 +75,12 @@ pub struct Cpu {
     sr: StatusRegister,
     sp: u8,
     dataport: u8,
+    // ROM status flags derived from the dataport value
+    kernal_rom_enabled: bool,
+    basic_rom_enabled: bool,
+    char_rom_enabled: bool,
+    io_enabled: bool,
+
     data_direction_reg: u8,
 
     cycles: u64,
@@ -85,6 +102,8 @@ pub struct Cpu {
 impl Cpu { 
     pub fn new() -> Cpu {
         Cpu {
+            irq: false,
+
             pc: 0u16,
             a: 0u8,
             x: 0u8,
@@ -92,6 +111,11 @@ impl Cpu {
             sr: StatusRegister::new(),
             sp: 0u8,
             dataport: 0u8,
+            kernal_rom_enabled: false,
+            basic_rom_enabled: false,
+            char_rom_enabled: false,
+            io_enabled: false,
+
             data_direction_reg: 0u8,
 
             cycles: 0u64,
@@ -120,7 +144,7 @@ impl Cpu {
         self.sp = 0xfd; // The stack pointer ends up initialized to 0xfd
 
         self.data_direction_reg = 0x2f;
-        self.dataport = 0x37;
+        self.write_dataport(0x37);
 
         self.addr_bus = self.pc;
         self.addr_enable = true;
@@ -1025,6 +1049,8 @@ impl Cpu {
             0xc | 0xd  => {
                 if row % 2 == 1 {
                     AddressLoX
+                } else if row == 6 {
+                    AddressIndirectLo
                 } else {
                     AddressLo
                 }
@@ -1047,6 +1073,10 @@ impl Cpu {
     pub fn cycle(&mut self, debug: bool) {
         use self::CpuState::*;
 
+        if self.pc < 0xb000 {
+            panic!("Out of KERNAL top");
+        }
+
         self.increment_pc();
         match self.state {
             ToLoad => {
@@ -1060,15 +1090,50 @@ impl Cpu {
                     self.state = self.do_instr(debug);
                 }
             },
+            Interrupt => {
+                // Ignore the interrupt if disabled
+                if self.sr.int_disable {
+                    self.irq = false;
+                } else {
+                    // Trigger a BRK and load the IRQ routine address
+                    if self.curr_op != Opcode::BRK {
+                        self.curr_op = Opcode::BRK;
+                        self.state = self.addressing_mode();
+                    } else {
+                        self.pc = IRQ_VEC_LO_ADDR;
+                        self.state = InterruptLo;
+                    }
+                }
+            },
+            InterruptLo => {
+                self.addr_lo = self.read_data_bus();
+                self.state = AddressHi
+            },
+            InterruptHi => {
+                self.addr_hi = self.read_data_bus();
+                let addr = self.addr_from_hi_lo();
+                self.pc = self.addr_from_hi_lo();
+                self.set_addr_bus(addr);
+
+                self.irq = false;
+                self.state = Fetch;
+            },
             Fetch => {
-                self.curr_op = Opcode::from_u8(self.read_data_bus());
-                self.state = self.addressing_mode();
+                if !self.irq {
+                    self.curr_op = Opcode::from_u8(self.read_data_bus());
+                    self.state = self.addressing_mode();
+                } else {
+                    self.state = Interrupt;
+                }
             },
             Implied => {
                 self.state = self.do_instr(debug);
                 if self.state == Fetch {
                     self.curr_op = Opcode::from_u8(self.read_data_bus());
                     self.state = self.addressing_mode();
+                } else {
+                    // Program counter shouldn't have been incremented
+                    self.pc = self.pc.wrapping_sub(1);
                 }
             },
             Immediate => {
@@ -1145,6 +1210,18 @@ impl Cpu {
                 self.set_addr_bus(addr);
 
                 self.state = Load;
+            },
+            AddressIndirectLo => {
+                self.addr_lo = self.read_data_bus();
+                self.state = AddressIndirectHi;
+            },
+            AddressIndirectHi => {
+                self.addr_hi = self.read_data_bus();
+                let addr = self.addr_from_hi_lo();
+                self.pc = addr;
+                self.set_addr_bus(addr);
+
+                self.state = AddressLo;
             },
             PushWordHi => {
                 let sp = self.get_stack_addr();
@@ -1270,6 +1347,10 @@ impl Cpu {
         self.rw = false;
     }
 
+    pub fn trigger_interrupt(&mut self) {
+        self.irq = true;
+    }
+
     pub fn data_in(&mut self, value: u8) {
         if self.rw {
             self.data_bus = value;
@@ -1291,6 +1372,29 @@ impl Cpu {
     pub fn write_dataport(&mut self, value: u8) {
         // TODO: This is not quite how the DDR masking works
         self.dataport = self.data_direction_reg & value;
+        
+        // Reset rom statuses
+        let rom_status = self.read_dataport() & 7;
+        self.kernal_rom_enabled = rom_status % 4 > 1;
+        self.basic_rom_enabled = rom_status % 4 == 3;
+        self.char_rom_enabled = rom_status < 4 && rom_status > 0;
+        self.io_enabled = rom_status > 4;
+    }
+
+    pub fn krom_enabled(&self) -> bool {
+        self.kernal_rom_enabled
+    }
+
+    pub fn brom_enabled(&self) -> bool {
+        self.basic_rom_enabled
+    }
+
+    pub fn crom_enabled(&self) -> bool {
+        self.char_rom_enabled
+    }
+
+    pub fn io_enabled(&self) -> bool {
+        self.io_enabled
     }
 
     pub fn read_dataport(&self) -> u8 {
@@ -1306,7 +1410,8 @@ impl Cpu {
         if self.state == Fetch || self.state == AddressLo || self.state == AddressLoX || 
             self.state == AddressLoY || self.state == AddressHi || self.state == AddressHiX ||
             self.state == AddressHiY || self.state == AddressZeropage || self.state == AddressZeropageX ||
-            self.state == AddressZeropageY || self.state == Immediate || self.state == Implied {
+            self.state == AddressZeropageY || self.state == Immediate || self.state == Implied ||
+            self.state == InterruptLo || self.state == AddressIndirectLo {
             self.pc = self.pc.wrapping_add(1);
             let pc = self.pc;
             self.set_addr_bus(pc);
