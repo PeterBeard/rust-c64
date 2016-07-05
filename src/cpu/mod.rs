@@ -1131,6 +1131,7 @@ impl Cpu {
                 self.state = Fetch;
             },
             Fetch => {
+
                 if !self.irq {
                     self.curr_op = Opcode::from_u8(self.read_data_bus());
                     self.state = self.addressing_mode();

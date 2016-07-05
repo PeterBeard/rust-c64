@@ -15,7 +15,7 @@ use io::cia::Cia;
 use std::fs::File;
 use std::io::{Read, Write, stdin, stdout};
 
-use std::time::{Instant, Duration};
+use std::time::{Instant, SystemTime, Duration};
 use std::thread::sleep;
 
 const RAM_IMAGE_FILE: &'static str = "ram-default-image.bin";
@@ -193,11 +193,13 @@ impl Bus {
 
         self.cpu.reset();
         let mut cycles: u64 = 0;
-        let mut total_time = 0f32;
         let mut speed = 0f32;
 
+        let total_t = Instant::now();
+        let mut idle_time = Duration::new(0, 0);
+        let idle_step = Duration::new(0, 100);
+
         loop {
-            let cycle_time = Instant::now();
 
             // Run the VIC-II
             let addr = self.convert_vic_ii_addr(self.vic.read_addr_bus());
@@ -243,11 +245,12 @@ impl Bus {
                 }
             }
 
-
             if self.mode != SystemMode::Run {
+                let elapsed = total_t.elapsed();
+                let total_time_ms = (elapsed.as_secs() * 1000) + ((elapsed.subsec_nanos() / 1_000_000) as u64);
+                let speed = (cycles as f32) / (total_time_ms as f32);
                 println!("----------");
-                let speed = (cycles as f32) / total_time;
-                println!("  Clock speed: {:8.3} kHz", speed/1000f32);
+                println!("  Mean Clock speed: {:8.3} kHz", speed);
                 println!("{:?}", self.cpu);
                 println!("{:?}", self.vic);
                 println!("----------");
@@ -276,17 +279,30 @@ impl Bus {
                     }
                 }
             } else {
-                let elapsed = cycle_time.elapsed();
-                if elapsed >= clock_period_ns {
-                    //println!("SLOW CYCLE [: {:?} / {:?} ns", elapsed, clock_period_ns);
-                    //println!("{:?}", self.cpu);
-                } else {
-                    sleep((clock_period_ns - elapsed));
+                if idle_time.subsec_nanos() > 0 {
+                    sleep(idle_time);
+                }
+            }
+
+            cycles = cycles.wrapping_add(1);
+
+            // Sample the speed every 10k cycles to make sure the clock speed isn't too fast
+            if cycles % 10000 == 0 {
+                let elapsed = total_t.elapsed();
+                let total_time_ms = (elapsed.as_secs() * 1000) + ((elapsed.subsec_nanos() / 1_000_000) as u64);
+                let speed = (cycles as f32) / (total_time_ms as f32);
+
+                if speed > (clock_speed_mhz as f32) / 1_000_000f32 {
+                    idle_time += idle_step;
+                } else if idle_time > Duration::new(0, 0) {
+                    idle_time -= idle_step;
                 }
 
+                println!("Ideal clock speed: {} kHz", clock_speed_mhz/1_000_000);
+                println!("Mean clock speed:  {} kHz", speed);
+                println!("Idle time: {} ns", idle_time.subsec_nanos());
+                println!("{:?}", self.cpu);
             }
-            total_time += (cycle_time.elapsed().subsec_nanos() as f32) / 1_000_000_000f32;
-            cycles = cycles.wrapping_add(1);
         }
     }
 }
