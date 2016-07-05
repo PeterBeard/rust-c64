@@ -15,7 +15,7 @@ use io::cia::Cia;
 use std::fs::File;
 use std::io::{Read, Write, stdin, stdout};
 
-use std::time::{Instant, SystemTime, Duration};
+use std::time::{Instant, Duration};
 use std::thread::sleep;
 
 const RAM_IMAGE_FILE: &'static str = "ram-default-image.bin";
@@ -188,12 +188,8 @@ impl Bus {
     }
 
     pub fn run(&mut self, clock_speed_mhz: u32) {
-        // Calculate the clock period in nanoseconds
-        let clock_period_ns = Duration::new(0, (1_000_000_000_000f32/(clock_speed_mhz as f32)) as u32);
-
         self.cpu.reset();
         let mut cycles: u64 = 0;
-        let mut speed = 0f32;
 
         let total_t = Instant::now();
         let mut idle_time = Duration::new(0, 0);
@@ -257,7 +253,11 @@ impl Bus {
 
                 if self.mode == SystemMode::DebugStep {
                     print!("] ");
-                    stdout().flush();
+                    match stdout().flush() {
+                        Ok(_) => { },
+                        Err(e) => { println!("Error flushing STDOUT: {:?}", e); }
+                    }
+
                     let mut input = String::new();
                     match stdin().read_line(&mut input) {
                         Ok(_) => { },
