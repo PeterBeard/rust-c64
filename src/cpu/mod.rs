@@ -13,9 +13,7 @@ use std::fmt;
 
 const RESET_VECTOR_ADDR: u16 = 0xfce2;
 const STACK_START_ADDR: u16 = 0x0100;
-
-const IRQ_VEC_LO_ADDR: u16 = 0xfffe;
-const IRQ_VEC_HI_ADDR: u16 = 0xffff;
+const IRQ_VEC_ADDR: u16 = 0xfffe;
 
 #[derive(Eq, PartialEq, Debug)]
 enum CpuState {
@@ -329,8 +327,8 @@ impl Cpu {
                         Store
                     } else {
                         // Read interrupt vector
-                        self.pc = IRQ_VEC_LO_ADDR;
-                        self.set_addr_bus(IRQ_VEC_LO_ADDR);
+                        self.pc = IRQ_VEC_ADDR;
+                        self.set_addr_bus(IRQ_VEC_ADDR);
 
                         AddressLo
                     }
@@ -1112,14 +1110,14 @@ impl Cpu {
                         self.curr_op = Opcode::BRK;
                         self.state = self.addressing_mode();
                     } else {
-                        self.pc = IRQ_VEC_LO_ADDR;
+                        self.pc = IRQ_VEC_ADDR;
                         self.state = InterruptLo;
                     }
                 }
             },
             InterruptLo => {
                 self.addr_lo = self.read_data_bus();
-                self.state = AddressHi
+                self.state = InterruptHi
             },
             InterruptHi => {
                 self.addr_hi = self.read_data_bus();
