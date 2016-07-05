@@ -92,9 +92,9 @@ fn main() {
 
     let mut opts = Options::new();
     opts.optopt("c", "clock", "Clock speed to use. Options are PAL (default) or NTSC", "TYPE");
-    opts.optopt("k", "kernal", "Location of the KERNAL ROM file.", "FILENAME");
-    opts.optopt("b", "basic", "Location of the BASIC ROM file.", "FILENAME");
-    opts.optopt("r", "char", "Location of the charater ROM file.", "FILENAME");
+    opts.optopt("k", "kernal", "Location of the KERNAL ROM file.", "FILE");
+    opts.optopt("b", "basic", "Location of the BASIC ROM file.", "FILE");
+    opts.optopt("r", "char", "Location of the charater ROM file.", "FILE");
 
     opts.optflag("d", "debug", "Show debugging information");
     opts.optflag("h", "help", "Display this information");
