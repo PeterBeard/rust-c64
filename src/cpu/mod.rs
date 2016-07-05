@@ -305,6 +305,7 @@ impl Cpu {
             },
 
             // BRK -- force break
+            // TODO: This should take 7 cycles, not 10
             BRK => {
                 if debug {
 					println!("BRK");
@@ -429,6 +430,7 @@ impl Cpu {
             },
 
             // DEC -- decrement
+            // TODO: Should take an extra cycle for absolute, x addressing
             DEC => {
                 if debug {
 					println!("DEC ${:0>2X}", self.addr_lo);
@@ -474,6 +476,7 @@ impl Cpu {
             },
 
             // INC -- increment
+            // TODO: Should take an extra cycle for absolute, x addressing
             INC => {
                 if debug {
 					println!("INC ${:0>2X}", self.addr_lo);
@@ -560,6 +563,7 @@ impl Cpu {
             },
             
             // LSR -- shift right one
+            // TODO: Should take an extra cycle for absolute, x addressing
             LSR => {
                 if debug {
 					println!("LSR");
@@ -598,6 +602,7 @@ impl Cpu {
             },
 
             // PHA -- push A on stack
+            // TODO: Cycle counts are wrong for the four stack functions
             PHA => {
                 if debug {
 					println!("PHA");
@@ -607,6 +612,8 @@ impl Cpu {
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
                 self.sp  = self.sp.wrapping_sub(1);
+                self.pc = self.pc.wrapping_add(1);
+
                 Store
             },
 
@@ -620,6 +627,8 @@ impl Cpu {
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
                 self.sp  = self.sp.wrapping_sub(1);
+                self.pc = self.pc.wrapping_add(1);
+
                 Store
             },
 
@@ -632,6 +641,8 @@ impl Cpu {
                     self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
                     self.set_addr_bus(sp);
+                    self.pc = self.pc.wrapping_add(1);
+
                     Load
                 } else {
                     self.a = self.read_data_bus();
@@ -650,6 +661,8 @@ impl Cpu {
                     self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
                     self.set_addr_bus(sp);
+                    self.pc = self.pc.wrapping_add(1);
+
                     Load
                 } else {
                     let data = self.read_data_bus();
@@ -1124,10 +1137,7 @@ impl Cpu {
             },
             Implied => {
                 self.state = self.do_instr(debug);
-                if self.state == Fetch {
-                    self.curr_op = Opcode::from_u8(self.read_data_bus());
-                    self.state = self.addressing_mode();
-                } else {
+                if self.state != Fetch {
                     // Program counter shouldn't have been incremented
                     self.pc = self.pc.wrapping_sub(1);
                 }
@@ -1191,7 +1201,12 @@ impl Cpu {
                 let addr = self.addr_from_hi_lo();
                 self.set_addr_bus(addr);
 
-                self.state = Load;
+                // JMP and JSR are special cases since we don't care what's on the data bus
+                if self.curr_op == Opcode::JMP || self.curr_op == Opcode::JSR {
+                    self.state = self.do_instr(debug);
+                } else {
+                    self.state = Load;
+                }
             },
             AddressHiX => {
                 self.addr_hi = self.read_data_bus();
@@ -1406,7 +1421,7 @@ impl Cpu {
         if self.state == Fetch || self.state == AddressLo || self.state == AddressLoX || 
             self.state == AddressLoY || self.state == AddressHi || self.state == AddressHiX ||
             self.state == AddressHiY || self.state == AddressZeropage || self.state == AddressZeropageX ||
-            self.state == AddressZeropageY || self.state == Immediate || self.state == Implied ||
+            self.state == AddressZeropageY || self.state == Immediate ||
             self.state == InterruptLo || self.state == AddressIndirectLo {
             self.pc = self.pc.wrapping_add(1);
             let pc = self.pc;
@@ -1448,7 +1463,11 @@ mod tests {
     // Run a program consisting of a single instruction
     fn run_program(program: &[u8], cpu: &mut Cpu) {
         let mut ram: [u8; 65536] = [0u8; 65536];
+        if program[0] == 0 {
+            ram = [80u8; 65536];
+        }
 
+        // Write the program to the reset location
         for addr in 0..program.len() {
             ram[super::RESET_VECTOR_ADDR as usize + addr] = program[addr];
         }
@@ -1458,9 +1477,7 @@ mod tests {
         loop {
             let addr = cpu.addr_bus as usize;
 
-            if cpu.pc != super::RESET_VECTOR_ADDR && cpu.state == super::CpuState::Fetch {
-                break;
-            } else if cpu.state == super::CpuState::Implied {
+            if (cpu.pc < super::RESET_VECTOR_ADDR || cpu.pc >= super::RESET_VECTOR_ADDR + program.len() as u16) && cpu.state == super::CpuState::Fetch {
                 break;
             }
 
@@ -1471,6 +1488,11 @@ mod tests {
             }
             println!("{:?}", cpu);
             cpu.cycle(false);
+            println!("{:?}", cpu);
+
+            if cpu.cycles > 20 {
+                break;
+            }
         }
     }
     // Test cycle-accuracy of instructions
@@ -1685,5 +1707,885 @@ mod tests {
         run_program(&program[..], &mut cpu);
 
         assert_eq!(7, cpu.cycles);
+    }
+
+    #[test]
+    fn bcc_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x90, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn bcs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb0, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn beq_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xf0, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn bit_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x24, 0x80];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn bit_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x2c, 0x00, 0xf0];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn bmi_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x30, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn bne_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xd0, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn bpl_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x10, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    //#[test]
+    fn brk_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(7, cpu.cycles);
+    }
+
+    #[test]
+    fn bvc_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x50, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn bvs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x70, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn clc_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x18];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn cld_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xd8];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn cli_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x58];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn clv_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb8];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc9, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc5, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xd5, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xcd, 0x00, 0xf0];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xdd, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_absy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xd9, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_indx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc1, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn cmp_indy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xd1, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn cpx_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xe0, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn cpx_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xe4, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn cpx_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xec, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn cpy_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc0, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn cpy_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc4, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn cpy_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xcc, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn dec_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc6, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn dec_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xd6, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn dec_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xce, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    //#[test]
+    fn dec_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xde, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(7, cpu.cycles);
+    }
+
+    #[test]
+    fn dex_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xca];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn dey_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x88];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x49, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x45, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x55, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x4d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x5d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_absy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x59, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_indx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x41, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn eor_indy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x51, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn inc_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xe6, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn inc_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xf6, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn inc_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xee, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    //#[test]
+    fn inc_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xfe, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(7, cpu.cycles);
+    }
+
+    #[test]
+    fn inx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xe8];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn iny_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xc8];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn jmp_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x4c, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn jmp_ind_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x6c, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn jsr_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x20, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa9, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa5, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb5, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xad, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xbd, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_absy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb9, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_indx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa1, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn lda_indy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb1, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn ldx_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa2, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn ldx_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa6, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn ldx_zpy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb6, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ldx_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xae, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ldx_absy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xbe, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ldy_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa0, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn ldy_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xa4, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn ldy_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xb4, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ldy_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xac, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ldy_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xbc, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn lsr_impl_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x4a];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn lsr_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x46, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    #[test]
+    fn lsr_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x56, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn lsr_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x4e, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    //#[test]
+    fn lsr_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x5e, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(7, cpu.cycles);
+    }
+
+    #[test]
+    fn nop_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0xea];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_imm_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x09];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(2, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_zp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x05, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_zpx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x15, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_abs_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x0d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_absx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x1d, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_absy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x19, 0x00, 0x0f];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_indx_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x01, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(6, cpu.cycles);
+    }
+
+    #[test]
+    fn ora_indy_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x11, 0x00];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(5, cpu.cycles);
+    }
+
+    //#[test]
+    fn pha_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x48];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    //#[test]
+    fn php_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x08];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(3, cpu.cycles);
+    }
+
+    //#[test]
+    fn pla_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x68];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
+    }
+
+    //#[test]
+    fn plp_test_cycles() {
+        let mut cpu = Cpu::new();
+
+        let program = [0x28];
+        run_program(&program[..], &mut cpu);
+
+        assert_eq!(4, cpu.cycles);
     }
 }
