@@ -1,6 +1,14 @@
 # rust-c64 [![Build Status](https://travis-ci.org/PeterBeard/rust-c64.svg?branch=master)](https://travis-ci.org/PeterBeard/rust-c64) 
 A Commodore 64 emulator written in Rust.
 
+Requires binary files for the contents of the ROM chips. You can download them here: [http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/](http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/).
+
+# What works?
+* CPU emulation (it's almost cycle-accurate!)
+
+# What doesn't?
+* Everything else
+
 # C64 Documentation
 ## MOS 6510 CPU
 * [MCS 6500 Microcomputer Family Programming Manual](http://archive.6502.org/books/mcs6500_family_programming_manual.pdf)
