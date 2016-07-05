@@ -11,11 +11,23 @@ extern crate getopts;
 use getopts::Options;
 use std::env;
 
+const RAM_IMAGE_FILE: &'static str = "src/ram-default-image.bin";
+
+const ROM_DIR: &'static str = ".vice/c64";
+const KERNAL_ROM_FILE: &'static str = "kernal";
+const BASIC_ROM_FILE: &'static str = "basic";
+const CHAR_ROM_FILE: &'static str = "chargen";
+
 // Clock frequencies in mHz
 const NTSC_CLK: u32 = 1022727714;
 const PAL_CLK: u32 = 985248444;
 
 struct C64 {
+    ram_image_file: String,
+    kernal_rom_file: String,
+    basic_rom_file: String,
+    char_rom_file: String,
+
     clock: u32,
     bus: Bus,
 }
@@ -23,6 +35,11 @@ struct C64 {
 impl C64 {
     pub fn new(debug: bool) -> C64 {
         C64 {
+            ram_image_file: String::new(),
+            kernal_rom_file: String::new(),
+            basic_rom_file: String::new(),
+            char_rom_file: String::new(),
+
             clock: 0,
             bus: Bus::new(debug),
         }
@@ -40,9 +57,25 @@ impl C64 {
         c
     }
 
+    pub fn set_ram_image_file(&mut self, fname: &str) {
+        self.ram_image_file = fname.to_string();
+    }
+
+    pub fn set_kernal_rom(&mut self, fname: &str) {
+        self.kernal_rom_file = fname.to_string();
+    }
+
+    pub fn set_basic_rom(&mut self, fname: &str) {
+        self.basic_rom_file = fname.to_string();
+    }
+
+    pub fn set_char_rom(&mut self, fname: &str) {
+        self.char_rom_file = fname.to_string();
+    }
+
     pub fn run(&mut self) {
-        self.bus.initialize();
-        self.bus.load_roms();
+        self.bus.initialize(&self.ram_image_file);
+        self.bus.load_roms(&self.kernal_rom_file, &self.basic_rom_file, &self.char_rom_file);
         self.bus.run(self.clock);
     }
 }
@@ -59,6 +92,10 @@ fn main() {
 
     let mut opts = Options::new();
     opts.optopt("c", "clock", "Clock speed to use. Options are PAL (default) or NTSC", "TYPE");
+    opts.optopt("k", "kernal", "Location of the KERNAL ROM file.", "FILENAME");
+    opts.optopt("b", "basic", "Location of the BASIC ROM file.", "FILENAME");
+    opts.optopt("r", "char", "Location of the charater ROM file.", "FILENAME");
+
     opts.optflag("d", "debug", "Show debugging information");
     opts.optflag("h", "help", "Display this information");
 
@@ -83,6 +120,44 @@ fn main() {
         "NTSC" | "ntsc" => C64::new_ntsc(debug),
         _ => panic!("Invalid clock type. See --help for options"),
     };
+
+    // Set the locations of the ROM files
+    commodore.set_ram_image_file(RAM_IMAGE_FILE);
+
+    let mut home = env::home_dir().unwrap();
+    home.push(ROM_DIR);
+
+    match matches.opt_str("k") {
+        Some(f) => {
+            commodore.set_kernal_rom(&f);
+        },
+        None => {
+            home.push(KERNAL_ROM_FILE);
+            commodore.set_kernal_rom(home.to_str().unwrap());
+            home.pop();
+        },
+    }
+
+    match matches.opt_str("b") {
+        Some(f) => {
+            commodore.set_basic_rom(&f);
+        },
+        None => {
+            home.push(BASIC_ROM_FILE);
+            commodore.set_basic_rom(home.to_str().unwrap());
+            home.pop();
+        },
+    }
+
+    match matches.opt_str("r") {
+        Some(f) => {
+            commodore.set_char_rom(&f);
+        },
+        None => {
+            home.push(CHAR_ROM_FILE);
+            commodore.set_char_rom(home.to_str().unwrap());
+        },
+    }
 
     commodore.run();
 }

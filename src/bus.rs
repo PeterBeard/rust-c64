@@ -18,11 +18,6 @@ use std::io::{Read, Write, stdin, stdout};
 use std::time::{Instant, Duration};
 use std::thread::sleep;
 
-const RAM_IMAGE_FILE: &'static str = "ram-default-image.bin";
-const KERNAL_ROM_FILE: &'static str = "kernal.901227-03.bin";
-const BASIC_ROM_FILE: &'static str = "basic.901226-01.bin";
-const CHAR_ROM_FILE: &'static str = "characters.901225-01.bin";
-
 const KERNAL_ROM_START: usize = 0xe000;
 const BASIC_ROM_START: usize = 0xa000;
 const CHAR_ROM_START: usize = 0xd000;
@@ -83,21 +78,45 @@ impl Bus {
     }
 
     // Write default values into memory
-    pub fn initialize(&mut self) {
-        let mut file = File::open(RAM_IMAGE_FILE).unwrap();
+    pub fn initialize(&mut self, ram_file: &str) {
+        let mut file = File::open(ram_file).unwrap();
         file.read(&mut self.ram).unwrap();
     }
 
     // Load data for the various ROM chips
-    pub fn load_roms(&mut self) {
-        let mut k_file = File::open(KERNAL_ROM_FILE).unwrap();
-        k_file.read(&mut self.kernal_rom).unwrap();
+    pub fn load_roms(&mut self, kernal_rom_file: &str, basic_rom_file: &str, char_rom_file: &str) {
+        let mut k_file = match File::open(kernal_rom_file) {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to open KERNAL ROM file: {}", e)
+        };
+        match k_file.read(&mut self.kernal_rom) {
+            Ok(_) => { },
+            Err(e) => {
+                panic!("Error reading KERNAL ROM file: {}", e);
+            },
+        }
 
-        let mut b_file = File::open(BASIC_ROM_FILE).unwrap();
-        b_file.read(&mut self.basic_rom).unwrap();
+        let mut b_file = match File::open(basic_rom_file) {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to open BASIC ROM file: {}", e)
+        };
+        match b_file.read(&mut self.basic_rom) {
+            Ok(_) => { },
+            Err(e) => {
+                panic!("Error reading BASIC ROM file: {}", e);
+            },
+        }
 
-        let mut c_file = File::open(CHAR_ROM_FILE).unwrap();
-        c_file.read(&mut self.char_rom).unwrap();
+        let mut c_file = match File::open(char_rom_file) {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to open character ROM file: {}", e)
+        };
+        match c_file.read(&mut self.char_rom) {
+            Ok(_) => { },
+            Err(e) => {
+                panic!("Error reading character ROM file: {}", e);
+            },
+        }
     }
     
     // Read a byte from the given address
