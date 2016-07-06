@@ -4,9 +4,13 @@
 // Functions and datatypes related to the CPU
 
 mod opcode;
+mod addressing_mode;
+mod instruction;
 mod status_register;
 
 use self::opcode::Opcode;
+use self::instruction::Instruction;
+
 use self::status_register::StatusRegister;
 
 use std::fmt;
@@ -29,34 +33,8 @@ enum CpuState {
     PullWordLo,
     PullWordHi,
 
-    AddressLo,
-    AddressLoX,
-    AddressLoY,
-    AddressHi,
-    AddressHiX,
-    AddressHiY,
+    Address,
 
-    AddressZeropage,
-    AddressZeropageX,
-    AddressZeropageXAdd,
-    AddressZeropageY,
-    AddressZeropageYAdd,
-
-    AddressIndirectLo,
-    AddressIndirectHi,
-
-    AddressIndirectIndexed,
-    AddressIndirectIndexedLo,
-    AddressIndirectIndexedHi,
-    AddressIndirectIndexedPageCross,
-
-    AddressIndexedIndirect,
-    AddressIndexedIndirectAdd,
-    AddressIndexedIndirectLo,
-    AddressIndexedIndirectHi,
-
-    Immediate,
-    Implied,
     ToLoad,
     Halt,
 }
@@ -82,7 +60,7 @@ pub struct Cpu {
     data_direction_reg: u8,
 
     cycles: u64,
-    curr_op: Opcode,
+    curr_instr: Instruction,
 
     addr_lo: u8,
     addr_hi: u8,
@@ -117,7 +95,7 @@ impl Cpu {
             data_direction_reg: 0u8,
 
             cycles: 0u64,
-            curr_op: Opcode::KIL,
+            curr_instr: Instruction::new(),
 
             addr_lo: 0u8,
             addr_hi: 0u8,
@@ -162,9 +140,11 @@ impl Cpu {
     fn do_instr(&mut self, debug: bool) -> CpuState {
         use self::CpuState::*;
         use self::opcode::Opcode::*;
-        match self.curr_op {
+        use self::addressing_mode::AddressingMode::*;
+
+        match (self.curr_instr.opcode, self.curr_instr.addr_mode) {
             // ADC -- add with carry
-            ADC => {
+            (ADC, _) => {
                 if debug {
 					println!("ADC #${:0>2X}", self.data_bus);
 				}
@@ -183,7 +163,7 @@ impl Cpu {
             },
 
             // AND -- store A & M in A
-            AND => {
+            (AND, _) => {
                 if debug {
 					println!("AND #${:0>2X}", self.data_bus);
 				}
@@ -194,17 +174,20 @@ impl Cpu {
             },
 
             // ASL -- shift left one
-            ASL => {
-                // TODO: This should take an extra cycle when using absolute, x addressing
+            (ASL, addr_mode) => {
                 if debug {
 					println!("ASL");
 				}
-                if self.state == Implied {
+                if addr_mode == Implied {
                     self.sr.determine_carry(self.a);
                     self.a <<= 1;
                     self.sr.determine_zero(self.a);
                     self.sr.determine_negative(self.a);
                     Fetch
+                } else if addr_mode == AbsoluteHiX {
+                    // Kill a cycle for absolute, x
+                    self.curr_instr.addr_mode = AbsoluteHi;
+                    Load
                 } else {
                     let data = self.read_data_bus();
                     self.sr.determine_carry(data);
@@ -217,7 +200,7 @@ impl Cpu {
             },
 
             // BCC -- branch if carry clear
-            BCC => {
+            (BCC, _) => {
                 if debug {
 					println!("BCC ${:0>2X}", self.data_bus);
 				}
@@ -229,7 +212,7 @@ impl Cpu {
             },
 
             // BCS -- branch if carry set
-            BCS => {
+            (BCS, _) => {
                 if debug {
 					println!("BCS ${:0>2X}", self.data_bus);
 				}
@@ -241,7 +224,7 @@ impl Cpu {
             },
             
             // BEQ -- branch if zero
-            BEQ => {
+            (BEQ, _) => {
                 if debug {
 					println!("BEQ ${:0>2X}", self.data_bus);
 				}
@@ -253,7 +236,7 @@ impl Cpu {
             },
 
             // BIT -- test bits against A
-            BIT => {
+            (BIT, _) => {
                 if debug {
                     println!("BIT ${:0>2X}", self.read_data_bus());
                 }
@@ -267,7 +250,7 @@ impl Cpu {
             },
 
             // BMI -- branch on minus
-            BMI => {
+            (BMI, _) => {
                 if debug {
 					println!("BMI ${:0>2X}", self.data_bus);
 				}
@@ -279,7 +262,7 @@ impl Cpu {
             },
             
             // BNE -- branch on result not zero
-            BNE => {
+            (BNE, _) => {
                 if debug {
 					println!("BNE ${:0>2X}", self.data_bus);
 				}
@@ -291,7 +274,7 @@ impl Cpu {
             },
 
             // BPL -- branch if plus
-            BPL => {
+            (BPL, _) => {
                 if debug {
 					println!("BPL ${:0>2X}", self.data_bus);
 				}
@@ -304,11 +287,11 @@ impl Cpu {
 
             // BRK -- force break
             // TODO: This should take 7 cycles, not 10
-            BRK => {
+            (BRK, addr_mode) => {
                 if debug {
 					println!("BRK");
 				}
-                if self.state == Implied {
+                if self.state == Address && addr_mode == Implied {
                     self.stack_word_ready = false;
                     self.stack_word = self.pc.wrapping_add(2);
                     PushWordHi
@@ -329,8 +312,9 @@ impl Cpu {
                         // Read interrupt vector
                         self.pc = IRQ_VEC_ADDR;
                         self.set_addr_bus(IRQ_VEC_ADDR);
+                        self.curr_instr.addr_mode = AbsoluteLo;
 
-                        AddressLo
+                        Address
                     }
                 } else {
                     self.pc = self.addr_from_hi_lo();
@@ -341,7 +325,7 @@ impl Cpu {
             },
 
             // BVC -- branck on overflow clear
-            BVC => {
+            (BVC, _) => {
                 if debug {
 					println!("BVC ${:0>2X}", self.read_data_bus());
 				}
@@ -353,7 +337,7 @@ impl Cpu {
             },
 
             // BVS -- branch on overflow set
-            BVS => {
+            (BVS, _) => {
                 if debug {
 					println!("BVS ${:0>2X}", self.read_data_bus());
 				}
@@ -365,7 +349,7 @@ impl Cpu {
             },
 
             // CLC -- clear carry flag
-            CLC => {
+            (CLC, _) => {
                 if debug {
 					println!("CLC");
 				}
@@ -374,7 +358,7 @@ impl Cpu {
             },
 
             // CLD -- clear decimal mode
-            CLD => {
+            (CLD, _) => {
                 if debug {
 					println!("CLD");
 				}
@@ -383,7 +367,7 @@ impl Cpu {
             },
 
             // CLI -- clear interrupt disable
-            CLI => {
+            (CLI, _) => {
                 if debug {
                     println!("CLI");
                 }
@@ -392,7 +376,7 @@ impl Cpu {
             },
 
             // CLV -- clear overflow
-            CLV => {
+            (CLV, _) => {
                 if debug {
                     println!("CLV");
                 }
@@ -401,7 +385,7 @@ impl Cpu {
             },
 
             // CMP -- compare with accumulator
-            CMP => {
+            (CMP, _) => {
                 if debug {
 					println!("CMP (${:0>2X}), Y", self.addr_bus);
 				}
@@ -410,7 +394,7 @@ impl Cpu {
             },
 
             // CPX -- compare X to memory
-            CPX => {
+            (CPX, _) => {
                 if debug {
 					println!("CPX #${:0>2X}", self.data_bus);
 				}
@@ -419,7 +403,7 @@ impl Cpu {
             },
 
             // CPY -- compare Y to memory
-            CPY => {
+            (CPY, _) => {
                 if debug {
 					println!("CPY #${:0>2X}", self.read_data_bus());
 				}
@@ -428,20 +412,25 @@ impl Cpu {
             },
 
             // DEC -- decrement
-            // TODO: Should take an extra cycle for absolute, x addressing
-            DEC => {
+            (DEC, addr_mode) => {
                 if debug {
 					println!("DEC ${:0>2X}", self.addr_lo);
 				}
-                let data = self.read_data_bus().wrapping_sub(1);
-                self.sr.determine_negative(self.data_bus);
-                self.sr.determine_zero(self.data_bus);
-                self.set_data_bus(data);
-                Store
+                if addr_mode == AbsoluteHiX {
+                    // Kill a cycle for absolute, x
+                    self.curr_instr.addr_mode = AbsoluteHi;
+                    Load
+                } else {
+                    let data = self.read_data_bus().wrapping_sub(1);
+                    self.sr.determine_negative(self.data_bus);
+                    self.sr.determine_zero(self.data_bus);
+                    self.set_data_bus(data);
+                    Store
+                }
             },
 
             // DEX -- decrement X
-            DEX => {
+            (DEX, _) => {
                 if debug {
 					println!("DEX");
 				}
@@ -452,7 +441,7 @@ impl Cpu {
             },
 
             // DEY -- decrement Y
-            DEY => {
+            (DEY, _) => {
                 if debug {
 					println!("DEY");
 				}
@@ -463,7 +452,7 @@ impl Cpu {
             },
 
             // EOR -- A XOR value
-            EOR => {
+            (EOR, _) => {
                 if debug {
 					println!("EOR ${:0>2X}", self.read_data_bus());
 				}
@@ -474,20 +463,25 @@ impl Cpu {
             },
 
             // INC -- increment
-            // TODO: Should take an extra cycle for absolute, x addressing
-            INC => {
+            (INC, addr_mode) => {
                 if debug {
 					println!("INC ${:0>2X}", self.addr_lo);
 				}
-                let data = self.read_data_bus().wrapping_add(1);
-                self.sr.determine_negative(self.data_bus);
-                self.sr.determine_zero(self.data_bus);
-                self.set_data_bus(data);
-                Store
+                if addr_mode == AbsoluteHiX {
+                    // Kill a cycle for absolute, x
+                    self.curr_instr.addr_mode = AbsoluteHi;
+                    Load
+                } else {
+                    let data = self.read_data_bus().wrapping_add(1);
+                    self.sr.determine_negative(self.data_bus);
+                    self.sr.determine_zero(self.data_bus);
+                    self.set_data_bus(data);
+                    Store
+                }
             },
 
             // INX -- increment X
-            INX => {
+            (INX, _) => {
                 if debug {
 					println!("INX");
 				}
@@ -498,7 +492,7 @@ impl Cpu {
             },
 
             // INY -- increment Y
-            INY => {
+            (INY, _) => {
                 if debug {
 					println!("INY");
 				}
@@ -509,7 +503,7 @@ impl Cpu {
             },
 
             // JMP -- jump
-            JMP => {
+            (JMP, _) => {
                 if debug {
 					println!("JMP ${:0>4X}", self.addr_from_hi_lo());
 				}
@@ -518,7 +512,7 @@ impl Cpu {
             },
 
             // JSR -- jump and save return addr
-            JSR => {
+            (JSR, _) => {
                 self.stack_word = self.pc;
                 self.pc = self.addr_from_hi_lo();
                 if debug {
@@ -528,7 +522,7 @@ impl Cpu {
             },
 
             // LDA -- load into A
-            LDA => {
+            (LDA, _) => {
                 if debug {
 					println!("LDA ${:0>2X}", self.addr_lo);
 				}
@@ -539,7 +533,7 @@ impl Cpu {
             },
             
             // LDX -- load into X
-            LDX => {
+            (LDX, _) => {
                 if debug {
 					println!("LDX #${:0>2X}", self.data_bus);
 				}
@@ -550,7 +544,7 @@ impl Cpu {
             },
 
             // LDY -- load into Y
-            LDY => {
+            (LDY, _) => {
                 if debug {
 					println!("LDY #${:0>2X}", self.data_bus);
 				}
@@ -561,17 +555,20 @@ impl Cpu {
             },
             
             // LSR -- shift right one
-            // TODO: Should take an extra cycle for absolute, x addressing
-            LSR => {
+            (LSR, addr_mode) => {
                 if debug {
 					println!("LSR");
 				}
-                if self.state == Implied {
+                if addr_mode == Implied {
                     self.sr.determine_carry(self.a);
                     self.a >>= 1;
                     self.sr.determine_zero(self.a);
                     self.sr.determine_negative(self.a);
                     Fetch
+                } else if addr_mode == AbsoluteHiX {
+                    // Kill a cycle for absolute, x
+                    self.curr_instr.addr_mode = AbsoluteHi;
+                    Load
                 } else {
                     let data = self.read_data_bus();
                     self.sr.determine_carry(data);
@@ -584,12 +581,12 @@ impl Cpu {
             },
 
             // NOP -- no op
-            NOP => {
+            (NOP, _) => {
                 Fetch
             },
 
             // ORA -- A | v
-            ORA => {
+            (ORA, _) => {
                 if debug {
 					println!("ORA (${:0>2X}, X)", self.addr_lo);
 				}
@@ -601,7 +598,7 @@ impl Cpu {
 
             // PHA -- push A on stack
             // TODO: Cycle counts are wrong for the four stack functions
-            PHA => {
+            (PHA, _) => {
                 if debug {
 					println!("PHA");
 				}
@@ -616,7 +613,7 @@ impl Cpu {
             },
 
             // PHP -- push SR on stack
-            PHP => {
+            (PHP, _) => {
                 if debug {
 					println!("PHP");
 				}
@@ -631,11 +628,11 @@ impl Cpu {
             },
 
             // PLA -- pull A from stack
-            PLA => {
+            (PLA, addr_mode) => {
                 if debug {
                     println!("PLA");
                 }
-                if self.state == Implied {
+                if addr_mode == Implied {
                     self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
                     self.set_addr_bus(sp);
@@ -651,11 +648,11 @@ impl Cpu {
             },
 
             // PLP -- pull SR from stack
-            PLP => {
+            (PLP, addr_mode) => {
                 if debug {
                     println!("PLA");
                 }
-                if self.state == Implied {
+                if addr_mode == Implied {
                     self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
                     self.set_addr_bus(sp);
@@ -670,17 +667,20 @@ impl Cpu {
             },
             
             // ROL -- rotate left
-            // TODO: Should take an extra cycle for absolute, x addressing
-            ROL => {
+            (ROL, addr_mode) => {
                 if debug {
 					println!("ROL");
 				}
-                if self.state == Implied {
+                if addr_mode == Implied {
                     self.sr.determine_negative(self.a);
                     self.a = self.a.rotate_left(1);
                     self.sr.determine_zero(self.a);
                     self.sr.determine_carry(self.a);
                     Fetch
+                } else if addr_mode == AbsoluteHiX {
+                    // Kill a cycle for absolute, x
+                    self.curr_instr.addr_mode = AbsoluteHi;
+                    Load
                 } else {
                     let data = self.read_data_bus();
                     self.sr.determine_negative(data);
@@ -693,17 +693,20 @@ impl Cpu {
             },
 
             // ROR -- rotate one bit right
-            // TODO: Should take an extra cycle for absolute, x addressing
-            ROR => {
+            (ROR, addr_mode) => {
                 if debug {
 					println!("ROR ${:0>2X}", self.addr_lo);
 				}
-                if self.state == Implied {
+                if addr_mode == Implied {
                     self.sr.determine_negative(self.a);
                     self.a = self.a.rotate_right(1);
                     self.sr.determine_zero(self.a);
                     self.sr.determine_carry(self.a);
                     Fetch
+                } else if addr_mode == AbsoluteHiX {
+                    // Kill a cycle for absolute, x
+                    self.curr_instr.addr_mode = AbsoluteHi;
+                    Load
                 } else {
                     let data = self.read_data_bus();
                     self.sr.determine_negative(data);
@@ -716,12 +719,12 @@ impl Cpu {
             },
 
             // RTI -- return from interrupt
-            RTI => {
+            (RTI, _) => {
                 panic!();
             },
 
             // RTS -- return from subroutine
-            RTS => {
+            (RTS, _) => {
                 if debug {
 					println!("RTS");
 				}
@@ -735,7 +738,7 @@ impl Cpu {
             },
 
             // SBC -- subtract with carry
-            SBC => {
+            (SBC, _) => {
                 if debug {
                     println!("SBC #${:0>2X}", self.read_data_bus());
                 }
@@ -760,7 +763,7 @@ impl Cpu {
             },
 
             // SEC -- set carry flag
-            SEC => {
+            (SEC, _) => {
                 if debug {
                     println!("SEC");
                 }
@@ -769,7 +772,7 @@ impl Cpu {
             },
 
             // SED -- set decimal mode
-            SED => {
+            (SED, _) => {
                 if debug {
                     println!("SED");
                 }
@@ -779,7 +782,7 @@ impl Cpu {
 
 
             // SEI -- disable interrupts
-            SEI => {
+            (SEI, _) => {
                 if debug {
 					println!("SEI");
 				}
@@ -789,7 +792,7 @@ impl Cpu {
 
             // STA -- store A
             // TODO: All addressing modes for STA take a few cycles too long
-            STA => {
+            (STA, _) => {
                 if debug {
 					println!("STA ${:0>4X}", self.addr_bus);
 				}
@@ -799,7 +802,7 @@ impl Cpu {
             },
             
             // STX -- store x
-            STX => {
+            (STX, _) => {
                 if debug {
 					println!("STX ${:0>4X}", self.addr_bus);
 				}
@@ -809,7 +812,7 @@ impl Cpu {
             },
 
             // STY -- store y
-            STY => {
+            (STY, _) => {
                 if debug {
 					println!("STY ${:0>2X}", self.addr_lo);
 				}
@@ -819,7 +822,7 @@ impl Cpu {
             },
 
             // TAX -- transfer A to X
-            TAX => {
+            (TAX, _) => {
                 if debug {
 					println!("TAX");
 				}
@@ -830,7 +833,7 @@ impl Cpu {
             }
 
             // TAY -- transfer A to Y
-            TAY => {
+            (TAY, _) => {
                 if debug {
 					println!("TAY");
 				}
@@ -841,7 +844,7 @@ impl Cpu {
             }
             
             // TYA -- transfer Y to A
-            TYA => {
+            (TYA, _) => {
                 if debug {
 					println!("TYA");
 				}
@@ -852,7 +855,7 @@ impl Cpu {
             },
 
             // TSX -- transfer SP to X
-            TSX => {
+            (TSX, _) => {
                 if debug {
 					println!("TSX");
 				}
@@ -863,7 +866,7 @@ impl Cpu {
             },
 
             // TXA -- transfer X to A
-            TXA => {
+            (TXA, _) => {
                 if debug {
 					println!("TXA");
 				}
@@ -874,7 +877,7 @@ impl Cpu {
             },
 
             // TXS -- transfer X to SP
-            TXS => {
+            (TXS, _) => {
                 if debug {
 					println!("TXS");
 				}
@@ -885,7 +888,7 @@ impl Cpu {
             // - Undocumented Instructions - //
             
             // ALR -- combination of AND and LSR
-            ALR => {
+            (ALR, _) => {
                 if debug {
                     println!("!! ALR $#{:0>2X}", self.read_data_bus());
                 }
@@ -899,7 +902,7 @@ impl Cpu {
             },
 
             // ANC -- AND with carry
-            ANC => {
+            (ANC, _) => {
                 if debug {
                     println!("!! ANC $#{:0>2X}", self.read_data_bus());
                 }
@@ -912,7 +915,7 @@ impl Cpu {
             },
 
             // ARR -- Combination of AND and ROR
-            ARR => {
+            (ARR, _) => {
                 if debug {
                     println!("!! ARR $#{:0>2X}", self.read_data_bus());
                 }
@@ -928,7 +931,7 @@ impl Cpu {
             },
 
             // AXS -- Combination of AND and SBC without borrow
-            AXS => {
+            (AXS, _) => {
                 if debug {
                     println!("!! AXS $#{:0>2X}", self.read_data_bus());
                 }
@@ -942,7 +945,7 @@ impl Cpu {
             },
 
             // DCP -- DEC then CMP
-            DCP => {
+            (DCP, _) => {
                 if debug {
                     println!("!! DCP");
                 }
@@ -958,7 +961,7 @@ impl Cpu {
             },
 
             // LAX -- LDA then TAX
-            LAX => {
+            (LAX, _) => {
                 if debug {
                     println!("!! LAX $#{:0>2X}", self.read_data_bus());
                 }
@@ -971,7 +974,7 @@ impl Cpu {
             },
 
             // SAX -- store A & X
-            SAX => {
+            (SAX, _) => {
                 if debug {
                     println!("!! SAX");
                 }
@@ -982,105 +985,13 @@ impl Cpu {
             },
 
             // KIL -- halt the CPU
-            KIL => {
+            (KIL, _) => {
                 Halt
             },
 
-            _ => {
-                panic!("Unimplemented instruction {:?}", self.curr_op)
+            (_, _) => {
+                panic!("Unimplemented instruction {:?}", self.curr_instr)
             }
-        }
-    }
-
-    // Determine the addressing mode of the current instruction
-    fn addressing_mode(&self) -> CpuState {
-        // Opcodes are organized so that codes in the same column generally use one of two
-        // addressing modes
-        use self::CpuState::*;
-
-        let row = self.read_data_bus() >> 4;
-        let col = self.read_data_bus() % 16;
-        match col {
-            0 => {
-                if row % 2 == 1 || row > 7{
-                    Immediate
-                } else {
-                    if row == 0 || row == 4 || row == 6 {
-                        Implied
-                    } else {
-                        AddressLo
-                    }
-                }
-            },
-            1 | 3 => {
-                if row % 2 == 1 {
-                    AddressIndirectIndexed
-                } else {
-                    AddressIndexedIndirect
-                }
-            },
-            2 => {
-                match row {
-                    8 | 0xa | 0xc | 0xe => Immediate,
-                    _ => Halt,
-                }
-            },
-            4 | 5 => {
-                if row % 2 == 1 {
-                    AddressZeropageX
-                } else {
-                    AddressZeropage
-                }
-            },
-            6 => {
-                if row % 2 == 0 {
-                    AddressZeropage
-                } else if row == 9 {
-                    AddressZeropageY
-                } else {
-                    AddressZeropageX
-                }
-            },
-            7 => {
-                if row % 2 == 0 {
-                    AddressZeropage
-                } else if row == 9 || row == 0xa {
-                    AddressZeropageY
-                } else {
-                    AddressZeropageX
-                }
-            },
-            8 | 0xa => {
-                Implied
-            },
-            9 | 0xb=> {
-                if row % 2 == 0 {
-                    Immediate
-                } else {
-                    AddressLoY
-                }
-            },
-            0xc | 0xd  => {
-                if row % 2 == 1 {
-                    AddressLoX
-                } else if row == 6 && col == 0xc {
-                    AddressIndirectLo
-                } else {
-                    AddressLo
-                }
-            },
-            0xe => {
-                if row % 2 == 0 {
-                    AddressLo
-                } else if row == 9 || row == 0xa {
-                    AddressLoY
-                } else {
-                    AddressLoX
-                }
-            },
-            _ => {
-                panic!("Unknown addressing mode for instruction {:?}", self.curr_op);
-            },
         }
     }
 
@@ -1088,36 +999,39 @@ impl Cpu {
         use self::CpuState::*;
 
         self.increment_pc();
-        match self.state {
+        let next_state = match self.state {
             ToLoad => {
                 // Switch to read mode
                 // BRK is a special case
-                if self.curr_op != Opcode::BRK {
+                if self.curr_instr.opcode != Opcode::BRK {
                     let pc = self.pc;
                     self.set_addr_bus(pc);
-                    self.state = Fetch;
+                    Fetch
                 } else {
-                    self.state = self.do_instr(debug);
+                    self.do_instr(debug)
                 }
             },
             Interrupt => {
                 // Ignore the interrupt if disabled
                 if self.sr.int_disable {
                     self.irq = false;
+                    Fetch
                 } else {
                     // Trigger a BRK and load the IRQ routine address
-                    if self.curr_op != Opcode::BRK {
-                        self.curr_op = Opcode::BRK;
-                        self.state = self.addressing_mode();
+                    if self.curr_instr.opcode != Opcode::BRK {
+                        self.curr_instr = Instruction::from_u8(0x00);
+
+                        Address
                     } else {
                         self.pc = IRQ_VEC_ADDR;
-                        self.state = InterruptLo;
+
+                        InterruptLo
                     }
                 }
             },
             InterruptLo => {
                 self.addr_lo = self.read_data_bus();
-                self.state = InterruptHi
+                InterruptHi
             },
             InterruptHi => {
                 self.addr_hi = self.read_data_bus();
@@ -1126,191 +1040,206 @@ impl Cpu {
                 self.set_addr_bus(addr);
 
                 self.irq = false;
-                self.state = Fetch;
+                Fetch
             },
             Fetch => {
 
                 if !self.irq {
-                    self.curr_op = Opcode::from_u8(self.read_data_bus());
-                    self.state = self.addressing_mode();
+                    self.curr_instr = Instruction::from_u8(self.read_data_bus());
+                    Address
                 } else {
-                    self.state = Interrupt;
+                    Interrupt
                 }
-            },
-            Implied => {
-                self.state = self.do_instr(debug);
-                if self.state != Fetch {
-                    // Program counter shouldn't have been incremented
-                    self.pc = self.pc.wrapping_sub(1);
-                }
-            },
-            Immediate => {
-                self.state = self.do_instr(debug);
             },
             Load => {
-                self.state = self.do_instr(debug);
-                if self.state == Fetch {
+                let s = self.do_instr(debug);
+                if s == Fetch {
                     let pc = self.pc;
                     self.set_addr_bus(pc);
                 }
+                s
             },
             Store => {
                 self.rw = false;
-                self.state = ToLoad;
+                ToLoad
             },
-            AddressZeropage | AddressZeropageX | AddressZeropageY => {
-                self.addr_hi = 0u8;
-                self.addr_lo = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
+            Address => {
+                use self::addressing_mode::AddressingMode::*;
+                match self.curr_instr.addr_mode {
+                    Zeropage | ZeropageX | ZeropageY => {
+                        self.addr_hi = 0u8;
+                        self.addr_lo = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
 
-                if self.state == AddressZeropageX {
-                    self.state = AddressZeropageXAdd;
-                } else if self.state == AddressZeropageY {
-                    self.state = AddressZeropageYAdd;
-                } else {
-                    self.state = Load;
+                        if self.curr_instr.addr_mode == ZeropageX {
+                            self.curr_instr.addr_mode = ZeropageXAdd;
+                            Address
+                        } else if self.curr_instr.addr_mode == ZeropageY {
+                            self.curr_instr.addr_mode = ZeropageYAdd;
+                            Address
+                        } else {
+                            Load
+                        }
+                    },
+                    ZeropageXAdd => {
+                        self.addr_lo = self.addr_lo.wrapping_add(self.x);
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        Load
+                    },
+                    ZeropageYAdd => {
+                        self.addr_lo = self.addr_lo.wrapping_add(self.y);
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        Load
+                    },
+                    AbsoluteLo => {
+                        self.addr_lo = self.read_data_bus();
+                        self.curr_instr.addr_mode = AbsoluteHi;
+                        Address
+                    },
+                    AbsoluteLoX => {
+                        self.addr_lo = self.read_data_bus();
+                        self.curr_instr.addr_mode = AbsoluteHiX;
+                        Address
+                    },
+                    AbsoluteLoY => {
+                        self.addr_lo = self.read_data_bus();
+                        self.curr_instr.addr_mode = AbsoluteHiY;
+                        Address
+                    }
+                    AbsoluteHi => {
+                        self.addr_hi = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        // JMP and JSR are special cases since we don't care what's on the data bus
+                        if self.curr_instr.opcode == Opcode::JMP || self.curr_instr.opcode == Opcode::JSR {
+                            self.do_instr(debug)
+                        } else {
+                            Load
+                        }
+                    },
+                    AbsoluteHiX => {
+                        self.addr_hi = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo().wrapping_add(self.x as u16);
+                        self.set_addr_bus(addr);
+
+                        Load
+                    },
+                    AbsoluteHiY => {
+                        self.addr_hi = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo().wrapping_add(self.y as u16);
+                        self.set_addr_bus(addr);
+
+                        Load
+                    },
+                    IndirectLo => {
+                        self.addr_lo = self.read_data_bus();
+                        self.curr_instr.addr_mode = IndirectHi;
+
+                        Address
+                    },
+                    IndirectHi => {
+                        self.addr_hi = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo();
+                        self.pc = addr;
+                        self.set_addr_bus(addr);
+
+                        self.curr_instr.addr_mode = AbsoluteLo;
+
+                        Address
+                    },
+                    IndexedIndirect => {
+                        self.addr_hi = 0u8;
+                        self.addr_lo = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        self.curr_instr.addr_mode = IndexedIndirectAdd;
+                        Address
+                    },
+                    IndexedIndirectAdd => {
+                        let addr = self.addr_bus.wrapping_add(self.x as u16);
+                        self.set_addr_bus(addr);
+
+                        self.curr_instr.addr_mode = IndexedIndirectLo;
+                        Address
+                    },
+                    IndexedIndirectLo => {
+                        self.addr_lo = self.read_data_bus();
+                        let addr = self.addr_bus.wrapping_add(1);
+                        self.set_addr_bus(addr);
+
+                        self.curr_instr.addr_mode = IndexedIndirectHi;
+                        Address
+                    },
+                    IndexedIndirectHi => {
+                        self.addr_hi = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        self.pc = self.pc.wrapping_add(1);
+                        Load
+                    },
+                    IndirectIndexed => {
+                        self.addr_hi = 0u8;
+                        self.addr_lo = self.read_data_bus();
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        self.curr_instr.addr_mode = IndirectIndexedLo;
+                        Address
+                    },
+                    IndirectIndexedLo => {
+                        self.addr_lo = self.addr_lo.wrapping_add(1);
+                        let addr = self.addr_from_hi_lo();
+
+                        self.addr_lo = self.read_data_bus();
+                        self.set_addr_bus(addr);
+
+                        self.curr_instr.addr_mode = IndirectIndexedHi;
+                        Address
+                    },
+                    IndirectIndexedHi => {
+                        self.addr_hi = self.read_data_bus();
+                        self.addr_lo = self.addr_lo.wrapping_add(self.y);
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        self.pc = self.pc.wrapping_add(1);
+
+                        // Determine whether we crossed to the next page
+                        if (self.addr_lo as u16) + (self.y as u16) > 0xff {
+                            self.curr_instr.addr_mode = IndirectIndexedPageCross;
+                            Address
+                        } else {
+                            Load
+                        }
+                    },
+                    IndirectIndexedPageCross => {
+                        self.addr_hi = self.addr_hi.wrapping_add(1);
+                        let addr = self.addr_from_hi_lo();
+                        self.set_addr_bus(addr);
+
+                        Load
+                    },
+
+                    Implied => {
+                        let s = self.do_instr(debug);
+                        if s != Fetch {
+                            // Program counter shouldn't have been incremented
+                            self.pc = self.pc.wrapping_sub(1);
+                        }
+                        s
+                    },
+                    Immediate => {
+                        self.do_instr(debug)
+                    },
                 }
-            },
-            AddressZeropageXAdd => {
-                self.addr_lo = self.addr_lo.wrapping_add(self.x);
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = Load;
-            },
-            AddressZeropageYAdd => {
-                self.addr_lo = self.addr_lo.wrapping_add(self.y);
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = Load;
-            },
-            AddressLo => {
-                self.addr_lo = self.read_data_bus();
-                self.state = AddressHi
-            },
-            AddressLoX => {
-                self.addr_lo = self.read_data_bus();
-                self.state = AddressHiX
-            },
-            AddressLoY => {
-                self.addr_lo = self.read_data_bus();
-                self.state = AddressHiY
-            }
-            AddressHi => {
-                self.addr_hi = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                // JMP and JSR are special cases since we don't care what's on the data bus
-                if self.curr_op == Opcode::JMP || self.curr_op == Opcode::JSR {
-                    self.state = self.do_instr(debug);
-                } else {
-                    self.state = Load;
-                }
-            },
-            AddressHiX => {
-                self.addr_hi = self.read_data_bus();
-                let addr = self.addr_from_hi_lo().wrapping_add(self.x as u16);
-                self.set_addr_bus(addr);
-
-                self.state = Load;
-            },
-            AddressHiY => {
-                self.addr_hi = self.read_data_bus();
-                let addr = self.addr_from_hi_lo().wrapping_add(self.y as u16);
-                self.set_addr_bus(addr);
-
-                self.state = Load;
-            },
-            AddressIndirectLo => {
-                self.addr_lo = self.read_data_bus();
-                self.state = AddressIndirectHi;
-            },
-            AddressIndirectHi => {
-                self.addr_hi = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.pc = addr;
-                self.set_addr_bus(addr);
-
-                self.state = AddressLo;
-            },
-            PushWordHi => {
-                let sp = self.get_stack_addr();
-                self.set_addr_bus(sp);
-                let hi_byte = (self.stack_word >> 8) as u8;
-                self.set_data_bus(hi_byte);
-                self.sp = self.sp.wrapping_sub(1);
-
-                self.state = PushWordLo;
-            },
-            AddressIndexedIndirect => {
-                self.addr_hi = 0u8;
-                self.addr_lo = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndexedIndirectAdd;
-            },
-            AddressIndexedIndirectAdd => {
-                let addr = self.addr_bus.wrapping_add(self.x as u16);
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndexedIndirectLo;
-            },
-            AddressIndexedIndirectLo => {
-                self.addr_lo = self.read_data_bus();
-                let addr = self.addr_bus.wrapping_add(1);
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndexedIndirectHi;
-            },
-            AddressIndexedIndirectHi => {
-                self.addr_hi = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.pc = self.pc.wrapping_add(1);
-                self.state = Load;
-            },
-            AddressIndirectIndexed => {
-                self.addr_hi = 0u8;
-                self.addr_lo = self.read_data_bus();
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndirectIndexedLo;
-            },
-            AddressIndirectIndexedLo => {
-                self.addr_lo = self.addr_lo.wrapping_add(1);
-                let addr = self.addr_from_hi_lo();
-
-                self.addr_lo = self.read_data_bus();
-                self.set_addr_bus(addr);
-
-                self.state = AddressIndirectIndexedHi;
-            },
-            AddressIndirectIndexedHi => {
-                self.addr_hi = self.read_data_bus();
-                self.addr_lo = self.addr_lo.wrapping_add(self.y);
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                // Determine whether we crossed to the next page
-                if (self.addr_lo as u16) + (self.y as u16) > 0xff {
-                    self.state = AddressIndirectIndexedPageCross;
-                } else {
-                    self.state = Load;
-                }
-                self.pc = self.pc.wrapping_add(1);
-            },
-            AddressIndirectIndexedPageCross => {
-                self.addr_hi = self.addr_hi.wrapping_add(1);
-                let addr = self.addr_from_hi_lo();
-                self.set_addr_bus(addr);
-
-                self.state = Load;
             },
             PushWordLo => {
                 let sp = self.get_stack_addr();
@@ -1319,12 +1248,21 @@ impl Cpu {
                 self.set_data_bus(lo_byte);
                 self.sp = self.sp.wrapping_sub(1);
 
-                self.state = ToLoad;
+                ToLoad
+            },
+            PushWordHi => {
+                let sp = self.get_stack_addr();
+                self.set_addr_bus(sp);
+                let hi_byte = (self.stack_word >> 8) as u8;
+                self.set_data_bus(hi_byte);
+                self.sp = self.sp.wrapping_sub(1);
+
+                PushWordLo
             },
             PullWordHi => {
                 if self.stack_word_ready {
                     self.stack_word += (self.data_bus as u16) << 8;
-                    self.state = self.do_instr(debug);
+                    self.do_instr(debug)
                 } else {
                     self.sp = self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
@@ -1332,6 +1270,7 @@ impl Cpu {
 
                     self.stack_word = self.data_bus as u16;
                     self.stack_word_ready = true;
+                    PullWordHi
                 }
             },
             PullWordLo => {
@@ -1339,16 +1278,17 @@ impl Cpu {
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
 
-                self.state = PullWordHi;
-
                 self.stack_word_ready = false;
                 self.stack_word = 0u16;
+
+                PullWordHi
             },
             Halt => {
                 panic!("CPU halted");
             },
         };
-        self.cycles += 1;
+        self.state = next_state;
+        self.cycles = self.cycles.wrapping_add(1);
     }
 
     fn read_data_bus(&self) -> u8 {
@@ -1420,14 +1360,29 @@ impl Cpu {
 
     fn increment_pc(&mut self) {
         use self::CpuState::*;
-        if self.state == Fetch || self.state == AddressLo || self.state == AddressLoX || 
-            self.state == AddressLoY || self.state == AddressHi || self.state == AddressHiX ||
-            self.state == AddressHiY || self.state == AddressZeropage || self.state == AddressZeropageX ||
-            self.state == AddressZeropageY || self.state == Immediate ||
-            self.state == InterruptLo || self.state == AddressIndirectLo {
-            self.pc = self.pc.wrapping_add(1);
-            let pc = self.pc;
-            self.set_addr_bus(pc);
+        match self.state {
+            Fetch | InterruptLo => {
+                self.pc = self.pc.wrapping_add(1);
+                let pc = self.pc;
+                self.set_addr_bus(pc);
+            },
+            Address => {
+                use self::addressing_mode::AddressingMode::*;
+                match self.curr_instr.addr_mode {
+                    AbsoluteLo | AbsoluteLoX | AbsoluteLoY | AbsoluteHi | AbsoluteHiX | AbsoluteHiY |
+                    Zeropage | ZeropageX | ZeropageY | Immediate | IndirectLo => {
+                        self.pc = self.pc.wrapping_add(1);
+                        let pc = self.pc;
+                        self.set_addr_bus(pc);
+                    },
+                    _ => {
+                        // Do nothing
+                    },
+                }
+            },
+            _ => {
+                // Do nothing
+            }
         }
     }
 
@@ -1451,9 +1406,9 @@ impl Cpu {
 impl fmt::Debug for Cpu {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-               "  Cycle {:0>5} :: PC: ${:0>4X} // A: ${:0>2X} // X: ${:0>2X} // Y: ${:0>2X} // SP: ${:0>2X} // SR: {:0>8b}\n                 DB: ${:0>2X} // AB: ${:0>4X} // CO: {:?} // RW: {:?} // S: {:?}",
+               "  Cycle {:0>5} :: PC: ${:0>4X} // A: ${:0>2X} // X: ${:0>2X} // Y: ${:0>2X} // SP: ${:0>2X} // SR: {:0>8b}\n                 DB: ${:0>2X} // AB: ${:0>4X} // CI: {:?} // RW: {:?} // S: {:?}",
                self.cycles, self.pc, self.a, self.x, self.y, self.sp, self.sr.to_u8(),
-               self.data_bus, self.addr_bus, self.curr_op, self.rw, self.state
+               self.data_bus, self.addr_bus, self.curr_instr, self.rw, self.state
                )
     }
 }

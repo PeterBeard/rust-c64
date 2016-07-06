@@ -1,9 +1,9 @@
 // Copyright 2016 Peter Beard
 // Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
 //
-// Functions and datatypes related to the CPU
+// Opcodes and function for mapping bytes to opcodes
 
-#[derive(PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub enum Opcode {
     ADC,
     AND,

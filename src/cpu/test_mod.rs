@@ -201,7 +201,7 @@ fn and_indy_cycles() {
 }
 
 // ASL
-//#[test]
+#[test]
 fn asl_impl_cycles() {
     let mut cpu = Cpu::new();
 
@@ -241,7 +241,7 @@ fn asl_abs_cycles() {
     assert_eq!(6, cpu.cycles);
 }
 
-//#[test]
+#[test]
 fn asl_absx_cycles() {
     let mut cpu = Cpu::new();
 
@@ -571,7 +571,7 @@ fn dec_abs_test_cycles() {
     assert_eq!(6, cpu.cycles);
 }
 
-//#[test]
+#[test]
 fn dec_absx_test_cycles() {
     let mut cpu = Cpu::new();
 
@@ -711,7 +711,7 @@ fn inc_abs_test_cycles() {
     assert_eq!(6, cpu.cycles);
 }
 
-//#[test]
+#[test]
 fn inc_absx_test_cycles() {
     let mut cpu = Cpu::new();
 
@@ -991,7 +991,7 @@ fn lsr_abs_test_cycles() {
     assert_eq!(6, cpu.cycles);
 }
 
-//#[test]
+#[test]
 fn lsr_absx_test_cycles() {
     let mut cpu = Cpu::new();
 
@@ -1171,7 +1171,7 @@ fn rol_abs_test_cycles() {
     assert_eq!(6, cpu.cycles);
 }
 
-//#[test]
+#[test]
 fn rol_absx_test_cycles() {
     let mut cpu = Cpu::new();
 
@@ -1221,7 +1221,7 @@ fn ror_abs_test_cycles() {
     assert_eq!(6, cpu.cycles);
 }
 
-//#[test]
+#[test]
 fn ror_absx_test_cycles() {
     let mut cpu = Cpu::new();
 
