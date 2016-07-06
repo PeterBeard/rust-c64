@@ -12,7 +12,28 @@ const CONTROL_REG_COUNT: usize = 0x40;
 // TODO: Add code for NTSC
 const HORZ_CYCLE_COUNT: u8 = 63;    // Number of cycles per line
 
-#[derive(Eq, PartialEq, Debug)]
+// Mapping from color nybble to gamma-corrected color
+// Values from Philip "Pepto" Timmermann's research here: http://www.pepto.de/projects/colorvic/
+const COLOR: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // Black        0
+    (0xff, 0xff, 0xff), // White        1
+    (0x68, 0x37, 0x2b), // Red          2
+    (0x70, 0xa4, 0xb2), // Cyan         3
+    (0x6f, 0x3d, 0x86), // Purple       4
+    (0x58, 0x8d, 0x43), // Green        5
+    (0x35, 0x28, 0x79), // Blue         6
+    (0xb8, 0xc7, 0x6f), // Yellow       7
+    (0x6f, 0x4f, 0x25), // Orange       8
+    (0x43, 0x39, 0x00), // Brown        9
+    (0x9a, 0x67, 0x59), // Light red    a
+    (0x44, 0x44, 0x44), // Dark grey    b
+    (0x6c, 0x6c, 0x6c), // Grey         c
+    (0x9a, 0xd2, 0x84), // Light green  d
+    (0x6c, 0x5e, 0xb5), // Light blue   e
+    (0x95, 0x95, 0x95), // Light grey   f
+];
+
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 enum VicState {
     Idle,
     MatrixRead,
