@@ -79,8 +79,16 @@ impl Bus {
 
     // Write default values into memory
     pub fn initialize(&mut self, ram_file: &str) {
-        let mut file = File::open(ram_file).unwrap();
-        file.read(&mut self.ram).unwrap();
+        let mut file = match File::open(ram_file) {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to open RAM image file: {}", e)
+        };
+        match file.read(&mut self.ram) {
+            Ok(_) => { },
+            Err(e) => {
+                panic!("Error reading RAM image file: {}", e);
+            },
+        }
     }
 
     // Load data for the various ROM chips
