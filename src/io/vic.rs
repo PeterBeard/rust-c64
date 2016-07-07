@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+use super::super::Screen;
+
 pub const MIN_CONTROL_ADDR: usize = 0xd000;
 pub const MAX_CONTROL_ADDR: usize = 0xd3ff;
 const CONTROL_REG_COUNT: usize = 0x40;
@@ -306,7 +308,7 @@ impl Vic {
         addr + (self.raster % 8) as u16
     }
 
-    pub fn rising_edge(&mut self, debug: bool) {
+    pub fn rising_edge(&mut self, screen: &mut Screen, debug: bool) {
         use self::VicState::*;
 
         self.aec = false;
@@ -329,12 +331,16 @@ impl Vic {
             self.xpos = 0;
             self.raster = self.raster.wrapping_add(1);
         }
+        if self.raster > 100 {
+            self.raster = 0;
+        }
+        screen.set_pixel_at(self.xpos as usize, self.raster as usize, COLOR[6]);
 
         self.aec = true;
         self.cycles = self.cycles.wrapping_add(1);
     }
 
-    pub fn falling_edge(&mut self, debug: bool) {
+    pub fn falling_edge(&mut self, screen: &mut Screen, debug: bool) {
 
     }
 
@@ -358,6 +364,10 @@ impl Vic {
     // Read the low byte of the data bus
     fn read_data_bus(&self) -> u8 {
         (self.data_bus & 0xff) as u8
+    }
+
+    pub fn frame_ready(&self) -> bool {
+        self.xpos == 0 && self.raster == 0
     }
 
     pub fn irq(&self) -> bool {

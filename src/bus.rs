@@ -2,7 +2,11 @@
 // Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
 //
 // Functions and datatypes relating to the system bus
+extern crate sdl2;
+use sdl2::keyboard::{Keycode, Mod};
+
 use cpu::Cpu;
+use super::Screen;
 
 use io::vic;
 use io::vic::Vic;
@@ -17,6 +21,7 @@ use std::io::{Read, Write, stdin, stdout};
 
 use std::time::{Instant, Duration};
 use std::thread::sleep;
+use std::sync::mpsc::{Sender, Receiver};
 
 const KERNAL_ROM_START: usize = 0xe000;
 const BASIC_ROM_START: usize = 0xa000;
@@ -36,6 +41,9 @@ const CIA1_MIN_CONTROL_ADDR: usize = 0xdc00;
 const CIA1_MAX_CONTROL_ADDR: usize = 0xdcff;
 const CIA2_MIN_CONTROL_ADDR: usize = 0xdd00;
 const CIA2_MAX_CONTROL_ADDR: usize = 0xddff;
+
+const SCREEN_X: u32 = 320;
+const SCREEN_Y: u32 = 240;
 
 #[derive(PartialEq, Eq)]
 enum SystemMode {
@@ -214,7 +222,7 @@ impl Bus {
         (bank + (addr & 0x3ff)) as usize
     }
 
-    pub fn run(&mut self, clock_speed_mhz: u32) {
+    pub fn run(&mut self, clock_speed_mhz: u32, screen_tx: Sender<Screen>, event_rx: Receiver<(Keycode, Mod)>) {
         self.cpu.reset();
         let mut cycles: u64 = 0;
 
@@ -222,7 +230,18 @@ impl Bus {
         let mut idle_time = Duration::new(0, 0);
         let idle_step = Duration::new(0, 100);
 
+        let mut screen = Screen::new(SCREEN_X, SCREEN_Y);
+
         loop {
+            // Get events from the main thread
+            match event_rx.try_recv() {
+                Ok(e) => {
+                    // TODO: Handle keyboard events with CIA1
+                },
+                Err(_) => {
+                    // No event sent
+                },
+            }
 
             // Run the VIC-II
             let addr = self.convert_vic_ii_addr(self.vic.read_addr_bus());
@@ -233,9 +252,9 @@ impl Bus {
             self.vic.color_in(color);
 
             if self.mode == SystemMode::Run {
-                self.vic.rising_edge(false);
+                self.vic.rising_edge(&mut screen, false);
             } else {
-                self.vic.rising_edge(true);
+                self.vic.rising_edge(&mut screen, true);
             }
 
             // Is the CPU allowed to use the bus or does the VIC need both clock edges?
@@ -262,9 +281,9 @@ impl Bus {
                 }
             } else {
                 if self.mode == SystemMode::Run {
-                    self.vic.falling_edge(false);
+                    self.vic.falling_edge(&mut screen, false);
                 } else {
-                    self.vic.falling_edge(true);
+                    self.vic.falling_edge(&mut screen, true);
                 }
             }
 
@@ -308,6 +327,14 @@ impl Bus {
             } else {
                 if idle_time.subsec_nanos() > 0 {
                     sleep(idle_time);
+                }
+            }
+
+            // Send a frame to the main thread if one is ready
+            if self.vic.frame_ready() {
+                match screen_tx.send(screen.clone()) {
+                    Ok(_) => continue,
+                    Err(e) => panic!("Error sending screen data: {}", e),
                 }
             }
 

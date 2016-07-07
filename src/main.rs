@@ -7,9 +7,23 @@ mod io;
 
 use bus::Bus;
 
+extern crate sdl2;
+use sdl2::video::WindowBuilder;
+use sdl2::surface::Surface;
+use sdl2::pixels::PixelFormatEnum;
+use sdl2::event::Event;
+use sdl2::keyboard::{Keycode, Mod};
+
 extern crate getopts;
 use getopts::Options;
 use std::env;
+
+use std::thread;
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
+
+const SCREEN_X:u32 = 320;
+const SCREEN_Y:u32 = 240;
 
 const RAM_IMAGE_FILE: &'static str = "src/ram-default-image.bin";
 
@@ -21,6 +35,44 @@ const CHAR_ROM_FILE: &'static str = "chargen";
 // Clock frequencies in mHz
 const NTSC_CLK: u32 = 1022727714;
 const PAL_CLK: u32 = 985248444;
+
+#[derive(Clone)]
+pub struct Screen {
+    width: u32,
+    height: u32,
+    pixels: Vec<(u8, u8, u8)>,
+}
+
+impl Screen {
+    pub fn new(w: u32, h: u32) -> Screen {
+        let mut p: Vec<(u8, u8, u8)> = Vec::with_capacity((w*h) as usize);
+        for _ in 0..w*h {
+            p.push((0, 0, 0));
+        }
+
+        Screen {
+            width: w,
+            height: h,
+            pixels: p,
+        }
+    }
+
+    pub fn set_pixel_at(&mut self, x: usize, y: usize, pixel: (u8, u8, u8)) {
+        let index = y*(self.width as usize) + x;
+        self.pixels[index] = pixel;
+    }
+
+    pub fn pixel_data(&self) -> Vec<u8> {
+        // Convert pixel data to surface data
+        let mut data: Vec<u8> = Vec::with_capacity(self.pixels.len() * 3);
+        for i in 0..self.pixels.len() {
+            data.push(self.pixels[i].0);
+            data.push(self.pixels[i].1);
+            data.push(self.pixels[i].2);
+        }
+        data
+    }
+}
 
 struct C64 {
     ram_image_file: String,
@@ -73,10 +125,10 @@ impl C64 {
         self.char_rom_file = fname.to_string();
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self, screen_tx: Sender<Screen>, event_rx: Receiver<(Keycode, Mod)>) {
         self.bus.initialize(&self.ram_image_file);
         self.bus.load_roms(&self.kernal_rom_file, &self.basic_rom_file, &self.char_rom_file);
-        self.bus.run(self.clock);
+        self.bus.run(self.clock, screen_tx, event_rx);
     }
 }
 
@@ -159,5 +211,54 @@ fn main() {
         },
     }
 
-    commodore.run();
+    // Set up the screen
+    let sdl2_context = sdl2::init().unwrap();
+    let window = WindowBuilder::new(
+        &(sdl2_context.video().unwrap()), "rust-c64", SCREEN_X, SCREEN_Y
+    ).build().unwrap();
+    let mut renderer = window.renderer().build().unwrap();
+
+
+    // Spawn a thread to run the emulator
+    let (screen_tx, screen_rx) = mpsc::channel::<Screen>();
+    let (event_tx, event_rx) = mpsc::channel::<(Keycode, Mod)>();
+    thread::spawn(move || {
+        commodore.run(screen_tx, event_rx);
+    });
+    
+    // Loop until quit event
+    let mut events = sdl2_context.event_pump().unwrap();
+    loop {
+        for event in events.poll_iter() {
+            match event {
+                Event::Quit{..} => {
+                    break;
+                },
+                Event::KeyDown {keycode: Some(keycode), keymod: m, ..} |
+                Event::KeyUp {keycode: Some(keycode), keymod: m, ..} => {
+                    match event_tx.send((keycode, m)) {
+                        Ok(_) => continue,
+                        Err(e) => panic!("Error sending event to emulator: {}", e),
+                    }
+                }
+                _ => {
+                    continue;
+                },
+            }
+        }
+        let scr = screen_rx.recv().unwrap();
+        let mut data = scr.pixel_data();
+        let surf = Surface::from_data(
+            &mut data[..],
+            scr.width,
+            scr.height,
+            0,
+            PixelFormatEnum::RGB24
+        ).unwrap();
+        let tex = renderer.create_texture_from_surface(&surf).unwrap();
+
+        renderer.clear();
+        renderer.copy(&tex, None, None);
+        renderer.present();
+    }
 }
