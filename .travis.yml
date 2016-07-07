@@ -1,4 +1,5 @@
 language: rust
+
 rust:
     - stable
     - beta
@@ -7,3 +8,6 @@ rust:
 matrix:
     allow_failures:
         -rust: nightly
+
+before_install:
+    - sudo apt-get install -qq libsdl2-dev
