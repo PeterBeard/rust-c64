@@ -234,13 +234,8 @@ impl Bus {
 
         loop {
             // Get events from the main thread
-            match event_rx.try_recv() {
-                Ok(e) => {
-                    // TODO: Handle keyboard events with CIA1
-                },
-                Err(_) => {
-                    // No event sent
-                },
+            if let Ok(e) = event_rx.try_recv() {
+                // TODO: Handle keyboard events with CIA1
             }
 
             // Run the VIC-II
@@ -279,12 +274,10 @@ impl Bus {
                 } else {
                     self.cpu.cycle(true);
                 }
+            } else if self.mode == SystemMode::Run {
+                self.vic.falling_edge(&mut screen, false);
             } else {
-                if self.mode == SystemMode::Run {
-                    self.vic.falling_edge(&mut screen, false);
-                } else {
-                    self.vic.falling_edge(&mut screen, true);
-                }
+                self.vic.falling_edge(&mut screen, true);
             }
 
             if self.mode != SystemMode::Run {
@@ -324,10 +317,8 @@ impl Bus {
                         }
                     }
                 }
-            } else {
-                if idle_time.subsec_nanos() > 0 {
-                    sleep(idle_time);
-                }
+            } else if idle_time.subsec_nanos() > 0 {
+                sleep(idle_time);
             }
 
             // Send a frame to the main thread if one is ready
@@ -352,10 +343,12 @@ impl Bus {
                     idle_time -= idle_step;
                 }
 
-                println!("Ideal clock speed: {} kHz", clock_speed_mhz/1_000_000);
-                println!("Mean clock speed:  {} kHz", speed);
-                println!("Idle time: {} ns", idle_time.subsec_nanos());
-                println!("{:?}", self.cpu);
+                if self.mode != SystemMode::Run {
+                    println!("Ideal clock speed: {} kHz", clock_speed_mhz/1_000_000);
+                    println!("Mean clock speed:  {} kHz", speed);
+                    println!("Idle time: {} ns", idle_time.subsec_nanos());
+                    println!("{:?}", self.cpu);
+                }
             }
         }
     }

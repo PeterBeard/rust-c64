@@ -353,7 +353,7 @@ impl Vic {
     // Write a byte to the data bus
     pub fn data_in(&mut self, byte: u8) {
         self.data_bus &= 0x0f00;
-        self.data_bus &= (byte as u16);
+        self.data_bus &= byte as u16;
     }
 
     // Read the color nybble of the data bus

@@ -16,7 +16,7 @@ pub struct StatusRegister {
 }
 
 impl StatusRegister {
-    pub fn from_u8(&mut self, value: u8) {
+    pub fn set_all_flags(&mut self, value: u8) {
         // NV-BDIZC
         self.negative = value & 128 == 128;
         self.overflow = value & 64 == 64;

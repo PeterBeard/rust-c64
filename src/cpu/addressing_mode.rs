@@ -46,14 +46,12 @@ impl AddressingMode {
         let col = code % 16;
         match col {
             0 => {
-                if row % 2 == 1 || row > 7{
+                if row % 2 == 1 || row > 7 {
                     Immediate
+                } else if row == 0 || row == 4 || row == 6 {
+                    Implied
                 } else {
-                    if row == 0 || row == 4 || row == 6 {
-                        Implied
-                    } else {
-                        AbsoluteLo
-                    }
+                    AbsoluteLo
                 }
             },
             1 | 3 => {

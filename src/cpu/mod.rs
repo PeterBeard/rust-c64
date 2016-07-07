@@ -167,7 +167,7 @@ impl Cpu {
                 if debug {
 					println!("AND #${:0>2X}", self.data_bus);
 				}
-                self.a = self.a & self.data_bus;
+                self.a &= self.data_bus;
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
@@ -661,7 +661,7 @@ impl Cpu {
                     Load
                 } else {
                     let data = self.read_data_bus();
-                    self.sr.from_u8(data);
+                    self.sr.set_all_flags(data);
                     Fetch
                 }
             },
@@ -1016,17 +1016,15 @@ impl Cpu {
                 if self.sr.int_disable {
                     self.irq = false;
                     Fetch
+                // Trigger a BRK and load the IRQ routine address
+                } else if self.curr_instr.opcode != Opcode::BRK {
+                    self.curr_instr = Instruction::from_u8(0x00);
+
+                    Address
                 } else {
-                    // Trigger a BRK and load the IRQ routine address
-                    if self.curr_instr.opcode != Opcode::BRK {
-                        self.curr_instr = Instruction::from_u8(0x00);
+                    self.pc = IRQ_VEC_ADDR;
 
-                        Address
-                    } else {
-                        self.pc = IRQ_VEC_ADDR;
-
-                        InterruptLo
-                    }
+                    InterruptLo
                 }
             },
             InterruptLo => {
