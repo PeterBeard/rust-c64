@@ -1,5 +1,5 @@
 // Copyright 2016 Peter Beard
-// Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
+// Distributed under the GNU GPL v3. For full terms, see the LICENSE file.
 //
 // A 6510 instruction consists of an opcode and its addressing mode
 use super::opcode::Opcode;

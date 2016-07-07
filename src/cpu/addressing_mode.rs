@@ -1,5 +1,5 @@
 // Copyright 2016 Peter Beard
-// Distributed under the GNU GPL v2. For full terms, see the LICENSE file.
+// Distributed under the GNU GPL v3. For full terms, see the LICENSE file.
 //
 // Enum for the various addressing modes of the 6510 and a function for figuring out which one to
 // use for a given opcode
