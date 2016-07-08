@@ -74,6 +74,11 @@ impl Screen {
     }
 }
 
+pub enum EmulatorEvent {
+    Quit,
+    Key(Keycode, Mod),
+}
+
 struct C64 {
     ram_image_file: String,
     kernal_rom_file: String,
@@ -125,7 +130,7 @@ impl C64 {
         self.char_rom_file = fname.to_string();
     }
 
-    pub fn run(&mut self, screen_tx: Sender<Screen>, event_rx: Receiver<(Keycode, Mod)>) {
+    pub fn run(&mut self, screen_tx: Sender<Screen>, event_rx: Receiver<EmulatorEvent>) {
         self.bus.initialize(&self.ram_image_file);
         self.bus.load_roms(&self.kernal_rom_file, &self.basic_rom_file, &self.char_rom_file);
         self.bus.run(self.clock, screen_tx, event_rx);
@@ -221,8 +226,8 @@ fn main() {
 
     // Spawn a thread to run the emulator
     let (screen_tx, screen_rx) = mpsc::channel::<Screen>();
-    let (event_tx, event_rx) = mpsc::channel::<(Keycode, Mod)>();
-    thread::spawn(move || {
+    let (event_tx, event_rx) = mpsc::channel::<EmulatorEvent>();
+    let emulator = thread::spawn(move || {
         commodore.run(screen_tx, event_rx);
     });
     
@@ -232,11 +237,12 @@ fn main() {
         for event in events.poll_iter() {
             match event {
                 Event::Quit{..} => {
+                    event_tx.send(EmulatorEvent::Quit).unwrap();
                     break;
                 },
                 Event::KeyDown {keycode: Some(keycode), keymod: m, ..} |
                 Event::KeyUp {keycode: Some(keycode), keymod: m, ..} => {
-                    match event_tx.send((keycode, m)) {
+                    match event_tx.send(EmulatorEvent::Key(keycode, m)) {
                         Ok(_) => continue,
                         Err(e) => panic!("Error sending event to emulator: {}", e),
                     }
@@ -246,7 +252,13 @@ fn main() {
                 },
             }
         }
-        let scr = screen_rx.recv().unwrap();
+
+        // This will block until it gets a frame from the emulator. Is that what it should do?
+        let scr = match screen_rx.recv() {
+            Ok(s) => s,
+            Err(_) => break,
+        };
+        
         let mut data = scr.pixel_data();
         let surf = Surface::from_data(
             &mut data[..],

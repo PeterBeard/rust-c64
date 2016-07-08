@@ -6,7 +6,7 @@ extern crate sdl2;
 use sdl2::keyboard::{Keycode, Mod};
 
 use cpu::Cpu;
-use super::Screen;
+use super::{Screen, EmulatorEvent};
 
 use io::vic;
 use io::vic::Vic;
@@ -222,7 +222,7 @@ impl Bus {
         (bank + (addr & 0x3ff)) as usize
     }
 
-    pub fn run(&mut self, clock_speed_mhz: u32, screen_tx: Sender<Screen>, event_rx: Receiver<(Keycode, Mod)>) {
+    pub fn run(&mut self, clock_speed_mhz: u32, screen_tx: Sender<Screen>, event_rx: Receiver<EmulatorEvent>) {
         self.cpu.reset();
         let mut cycles: u64 = 0;
 
@@ -232,10 +232,17 @@ impl Bus {
 
         let mut screen = Screen::new(SCREEN_X, SCREEN_Y);
 
-        loop {
+        'emulator: loop {
             // Get events from the main thread
             if let Ok(e) = event_rx.try_recv() {
-                // TODO: Handle keyboard events with CIA1
+                match e {
+                    EmulatorEvent::Key(keycode, m) => {
+                        // TODO: Handle keyboard events with CIA1
+                    },
+                    EmulatorEvent::Quit => {
+                        break 'emulator;
+                    },
+                }
             }
 
             // Run the VIC-II
