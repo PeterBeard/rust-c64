@@ -358,8 +358,6 @@ impl Opcode {
             0xfd => SBC,
             0xfe => INC,
             0xff => ISC,
-
-            _ => panic!("Opcode out of range: {:0>4X}", code),
         }
     }
 }
