@@ -5,7 +5,7 @@ mod bus;
 mod cpu;
 mod io;
 
-use bus::Bus;
+use crate::bus::Bus;
 
 extern crate sdl2;
 use sdl2::event::Event;

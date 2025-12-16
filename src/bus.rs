@@ -5,16 +5,16 @@
 extern crate sdl2;
 use sdl2::keyboard::{Keycode, Mod};
 
-use cpu::Cpu;
+use crate::cpu::Cpu;
 use super::{Screen, EmulatorEvent};
 
-use io::vic;
-use io::vic::Vic;
+use crate::io::vic;
+use crate::io::vic::Vic;
 
-use io::sid;
-use io::sid::Sid;
+use crate::io::sid;
+use crate::io::sid::Sid;
 
-use io::cia::Cia;
+use crate::io::cia::Cia;
 
 use std::fs::File;
 use std::io::{Read, Write, stdin, stdout};
