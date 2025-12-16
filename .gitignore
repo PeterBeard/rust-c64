@@ -7,7 +7,7 @@
 Cargo.lock
 target
 target-install
-Cargo.lock
+/roms/
 
 *.swp
 callgrind.*
