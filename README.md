@@ -5,7 +5,7 @@ A Commodore 64 emulator written in Rust.
 Requires binary files for the contents of the ROM chips. You can download them here: [http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/](http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/).
 
 ## What works?
-* CPU emulation (it's almost cycle-accurate!)
+* CPU emulation (it's almost cycle-accurate!) at PAL or NTSC clock speed
 
 ## What doesn't?
 * Everything else
@@ -26,6 +26,28 @@ Here are the ROMs required by the emulator with links to the specific ones I've 
 * BASIC ROM: [https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/basic.901226-01.bin](basic.901226-01.bin) [8 kiB, binary]
 * Character ROM: [https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/characters.901225-01.bin](characters.901225-01.bin) [4 kiB, binary]
 * KERNAL ROM: [https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/kernal.901227-02.bin](kernal.901227-02.bin) [8 kiB, binary]
+
+# Usage
+
+Right now all you can do is start up the emulator and watch it process CPU instructions; video and audio aren't yet supported.
+
+You can build and run the emulator with Cargo, just make sure to specify the paths to your ROM files:
+
+```
+$ cargo run -- -k roms/kernal.bin -b roms/basic.bin -r roms/char.bin
+```
+
+## Options
+
+```
+    -c, --clock TYPE    Clock speed to use. Options are PAL (default) or NTSC
+    -k, --kernal FILE   Location of the KERNAL ROM file.
+    -b, --basic FILE    Location of the BASIC ROM file.
+    -r, --char FILE     Location of the charater ROM file.
+    -d, --debug         Show debugging information
+    -h, --help          Display this information
+```
+
 
 # C64 Documentation
 ## MOS 6510 CPU
