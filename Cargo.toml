@@ -1,7 +1,7 @@
 [package]
 name = "c64"
 version = "0.1.0"
-authors = ["Peter Beard <peter.b.beard+github@gmail.com>"]
+authors = ["Peter Beard <peter@peterbeard.co>"]
 edition = "2024"
 
 [dependencies]
