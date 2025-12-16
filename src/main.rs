@@ -196,42 +196,44 @@ fn main() {
     match matches.opt_str("k") {
         Some(f) => {
             commodore.set_kernal_rom(&f);
-        },
+        }
         None => {
             home.push(KERNAL_ROM_FILE);
             commodore.set_kernal_rom(home.to_str().unwrap());
             home.pop();
-        },
+        }
     }
 
     match matches.opt_str("b") {
         Some(f) => {
             commodore.set_basic_rom(&f);
-        },
+        }
         None => {
             home.push(BASIC_ROM_FILE);
             commodore.set_basic_rom(home.to_str().unwrap());
             home.pop();
-        },
+        }
     }
 
     match matches.opt_str("r") {
         Some(f) => {
             commodore.set_char_rom(&f);
-        },
+        }
         None => {
             home.push(CHAR_ROM_FILE);
             commodore.set_char_rom(home.to_str().unwrap());
-        },
+        }
     }
 
     // Set up the screen
     let sdl2_context = sdl2::init().unwrap();
-    let window = WindowBuilder::new(
-        &(sdl2_context.video().unwrap()), "rust-c64", SCREEN_X, SCREEN_Y
-    ).build().unwrap();
-    let mut renderer = window.renderer().build().unwrap();
-
+    let video_subsystem = sdl2_context.video().expect("Failed to get video context");
+    let window = video_subsystem
+        .window("rust-c64", SCREEN_X, SCREEN_Y)
+        .build()
+        .expect("Failed to build window");
+    let mut canvas = window.into_canvas().build().expect("Failed to get canvas");
+    let texture_creator = canvas.texture_creator();
 
     // Spawn a thread to run the emulator
     let (screen_tx, screen_rx) = mpsc::channel::<Screen>();
@@ -273,19 +275,22 @@ fn main() {
             Ok(s) => s,
             Err(_) => break,
         };
-        
+
         let mut data = scr.pixel_data();
         let surf = Surface::from_data(
             &mut data[..],
             scr.width,
             scr.height,
             0,
-            PixelFormatEnum::RGB24
-        ).unwrap();
-        let tex = renderer.create_texture_from_surface(&surf).unwrap();
+            PixelFormatEnum::RGB24,
+        )
+        .unwrap();
+        let tex = texture_creator.create_texture_from_surface(&surf).unwrap();
 
-        renderer.clear();
-        renderer.copy(&tex, None, None);
-        renderer.present();
+        canvas.clear();
+        canvas
+            .copy(&tex, None, None)
+            .expect("Failed to copy texture");
+        canvas.present();
     }
 }
