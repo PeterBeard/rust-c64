@@ -12,7 +12,6 @@ use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::surface::Surface;
-use sdl2::video::WindowBuilder;
 
 extern crate getopts;
 use getopts::Options;
