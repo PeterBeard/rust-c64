@@ -1,4 +1,5 @@
-# rust-c64 [![Build Status](https://travis-ci.org/PeterBeard/rust-c64.svg?branch=master)](https://travis-ci.org/PeterBeard/rust-c64)
+# rust-c64
+
 A Commodore 64 emulator written in Rust.
 
 Requires binary files for the contents of the ROM chips. You can download them here: [http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/](http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/).
