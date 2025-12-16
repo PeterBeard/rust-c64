@@ -12,9 +12,20 @@ Requires binary files for the contents of the ROM chips. You can download them h
 
 # Installation
 
+## Prerequisites
+
 You'll need rust and libsdl2 to compile this project. See the [https://github.com/Rust-SDL2/rust-sdl2?tab=readme-ov-file#sdl20-development-libraries](SDL2 README) for instructions on how to install its prerequisites.
 
 Then you should be able to build the project with `cargo build`.
+
+## ROMs
+
+This emulator doesn't include binaries for the various ROM chips in the Commodore 64. You can download them from [http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/](http://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/).
+
+Here are the ROMs required by the emulator with links to the specific ones I've tested:
+* BASIC ROM: [https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/basic.901226-01.bin](basic.901226-01.bin) [8 kiB, binary]
+* Character ROM: [https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/characters.901225-01.bin](characters.901225-01.bin) [4 kiB, binary]
+* KERNAL ROM: [https://www.zimmers.net/anonftp/pub/cbm/firmware/computers/c64/kernal.901227-02.bin](kernal.901227-02.bin) [8 kiB, binary]
 
 # C64 Documentation
 ## MOS 6510 CPU
