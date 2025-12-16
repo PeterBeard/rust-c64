@@ -1,29 +1,29 @@
 // Copyright 2016 Peter Beard
 // Distributed under the GNU GPL v3. For full terms, see the LICENSE file.
 
-mod cpu;
 mod bus;
+mod cpu;
 mod io;
 
 use bus::Bus;
 
 extern crate sdl2;
-use sdl2::video::WindowBuilder;
-use sdl2::surface::Surface;
-use sdl2::pixels::PixelFormatEnum;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
+use sdl2::pixels::PixelFormatEnum;
+use sdl2::surface::Surface;
+use sdl2::video::WindowBuilder;
 
 extern crate getopts;
 use getopts::Options;
 use std::env;
 
-use std::thread;
 use std::sync::mpsc;
-use std::sync::mpsc::{Sender, Receiver};
+use std::sync::mpsc::{Receiver, Sender};
+use std::thread;
 
-const SCREEN_X:u32 = 320;
-const SCREEN_Y:u32 = 240;
+const SCREEN_X: u32 = 320;
+const SCREEN_Y: u32 = 240;
 
 const RAM_IMAGE_FILE: &'static str = "src/ram-default-image.bin";
 
@@ -45,8 +45,8 @@ pub struct Screen {
 
 impl Screen {
     pub fn new(w: u32, h: u32) -> Screen {
-        let mut p: Vec<(u8, u8, u8)> = Vec::with_capacity((w*h) as usize);
-        for _ in 0..w*h {
+        let mut p: Vec<(u8, u8, u8)> = Vec::with_capacity((w * h) as usize);
+        for _ in 0..w * h {
             p.push((0, 0, 0));
         }
 
@@ -58,7 +58,7 @@ impl Screen {
     }
 
     pub fn set_pixel_at(&mut self, x: usize, y: usize, pixel: (u8, u8, u8)) {
-        let index = y*(self.width as usize) + x;
+        let index = y * (self.width as usize) + x;
         self.pixels[index] = pixel;
     }
 
@@ -132,7 +132,11 @@ impl C64 {
 
     pub fn run(&mut self, screen_tx: Sender<Screen>, event_rx: Receiver<EmulatorEvent>) {
         self.bus.initialize(&self.ram_image_file);
-        self.bus.load_roms(&self.kernal_rom_file, &self.basic_rom_file, &self.char_rom_file);
+        self.bus.load_roms(
+            &self.kernal_rom_file,
+            &self.basic_rom_file,
+            &self.char_rom_file,
+        );
         self.bus.run(self.clock, screen_tx, event_rx);
     }
 }
@@ -148,7 +152,12 @@ fn main() {
     let pname = args[0].clone();
 
     let mut opts = Options::new();
-    opts.optopt("c", "clock", "Clock speed to use. Options are PAL (default) or NTSC", "TYPE");
+    opts.optopt(
+        "c",
+        "clock",
+        "Clock speed to use. Options are PAL (default) or NTSC",
+        "TYPE",
+    );
     opts.optopt("k", "kernal", "Location of the KERNAL ROM file.", "FILE");
     opts.optopt("b", "basic", "Location of the BASIC ROM file.", "FILE");
     opts.optopt("r", "char", "Location of the charater ROM file.", "FILE");
@@ -230,26 +239,32 @@ fn main() {
     let emulator = thread::spawn(move || {
         commodore.run(screen_tx, event_rx);
     });
-    
+
     // Loop until quit event
     let mut events = sdl2_context.event_pump().unwrap();
     loop {
         for event in events.poll_iter() {
             match event {
-                Event::Quit{..} => {
+                Event::Quit { .. } => {
                     event_tx.send(EmulatorEvent::Quit).unwrap();
                     break;
-                },
-                Event::KeyDown {keycode: Some(keycode), keymod: m, ..} |
-                Event::KeyUp {keycode: Some(keycode), keymod: m, ..} => {
-                    match event_tx.send(EmulatorEvent::Key(keycode, m)) {
-                        Ok(_) => continue,
-                        Err(e) => panic!("Error sending event to emulator: {}", e),
-                    }
                 }
+                Event::KeyDown {
+                    keycode: Some(keycode),
+                    keymod: m,
+                    ..
+                }
+                | Event::KeyUp {
+                    keycode: Some(keycode),
+                    keymod: m,
+                    ..
+                } => match event_tx.send(EmulatorEvent::Key(keycode, m)) {
+                    Ok(_) => continue,
+                    Err(e) => panic!("Error sending event to emulator: {}", e),
+                },
                 _ => {
                     continue;
-                },
+                }
             }
         }
 
