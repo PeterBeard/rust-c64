@@ -3,13 +3,13 @@
 //
 // Functions and datatypes related to the CPU
 
-mod opcode;
 mod addressing_mode;
 mod instruction;
+mod opcode;
 mod status_register;
 
-use self::opcode::Opcode;
 use self::instruction::Instruction;
+use self::opcode::Opcode;
 
 use self::status_register::StatusRegister;
 
@@ -66,7 +66,7 @@ pub struct Cpu {
     addr_hi: u8,
 
     data_bus: u8,
-    pub rw: bool,          // Bus read/write - true for read, false for write
+    pub rw: bool, // Bus read/write - true for read, false for write
     pub addr_enable: bool,
     pub addr_bus: u16,
 
@@ -75,7 +75,7 @@ pub struct Cpu {
     state: CpuState,
 }
 
-impl Cpu { 
+impl Cpu {
     pub fn new() -> Cpu {
         Cpu {
             irq: false,
@@ -138,16 +138,16 @@ impl Cpu {
 
     // Do the action associated with an opcode
     fn do_instr(&mut self, debug: bool) -> CpuState {
-        use self::CpuState::*;
-        use self::opcode::Opcode::*;
         use self::addressing_mode::AddressingMode::*;
+        use self::opcode::Opcode::*;
+        use self::CpuState::*;
 
         match (self.curr_instr.opcode, self.curr_instr.addr_mode) {
             // ADC -- add with carry
             (ADC, _) => {
                 if debug {
-					println!("ADC #${:0>2X}", self.data_bus);
-				}
+                    println!("ADC #${:0>2X}", self.data_bus);
+                }
                 let old_sign = self.a & 0x80;
                 let result = (self.a as u16) + (self.data_bus as u16);
                 if self.sr.decimal {
@@ -160,24 +160,24 @@ impl Cpu {
                 self.sr.overflow = old_sign != (self.a & 0x80);
                 self.sr.determine_zero(self.a);
                 Fetch
-            },
+            }
 
             // AND -- store A & M in A
             (AND, _) => {
                 if debug {
-					println!("AND #${:0>2X}", self.data_bus);
-				}
+                    println!("AND #${:0>2X}", self.data_bus);
+                }
                 self.a &= self.data_bus;
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
-            },
+            }
 
             // ASL -- shift left one
             (ASL, addr_mode) => {
                 if debug {
-					println!("ASL");
-				}
+                    println!("ASL");
+                }
                 if addr_mode == Implied {
                     self.sr.determine_carry(self.a);
                     self.a <<= 1;
@@ -197,43 +197,43 @@ impl Cpu {
                     self.sr.determine_negative(data);
                     Store
                 }
-            },
+            }
 
             // BCC -- branch if carry clear
             (BCC, _) => {
                 if debug {
-					println!("BCC ${:0>2X}", self.data_bus);
-				}
+                    println!("BCC ${:0>2X}", self.data_bus);
+                }
 
                 if !self.sr.carry {
                     self.relative_branch();
                 }
                 Fetch
-            },
+            }
 
             // BCS -- branch if carry set
             (BCS, _) => {
                 if debug {
-					println!("BCS ${:0>2X}", self.data_bus);
-				}
+                    println!("BCS ${:0>2X}", self.data_bus);
+                }
                 self.pc += 2;
                 if self.sr.carry {
                     self.relative_branch();
                 }
                 Fetch
-            },
-            
+            }
+
             // BEQ -- branch if zero
             (BEQ, _) => {
                 if debug {
-					println!("BEQ ${:0>2X}", self.data_bus);
-				}
+                    println!("BEQ ${:0>2X}", self.data_bus);
+                }
 
                 if self.sr.zero_result {
                     self.relative_branch();
                 }
                 Fetch
-            },
+            }
 
             // BIT -- test bits against A
             (BIT, _) => {
@@ -247,50 +247,50 @@ impl Cpu {
                 self.sr.determine_negative(data);
                 self.sr.determine_zero(self.a);
                 Fetch
-            },
+            }
 
             // BMI -- branch on minus
             (BMI, _) => {
                 if debug {
-					println!("BMI ${:0>2X}", self.data_bus);
-				}
+                    println!("BMI ${:0>2X}", self.data_bus);
+                }
 
                 if self.sr.negative {
                     self.relative_branch();
                 }
                 Fetch
-            },
-            
+            }
+
             // BNE -- branch on result not zero
             (BNE, _) => {
                 if debug {
-					println!("BNE ${:0>2X}", self.data_bus);
-				}
+                    println!("BNE ${:0>2X}", self.data_bus);
+                }
 
                 if !self.sr.zero_result {
                     self.relative_branch();
                 }
                 Fetch
-            },
+            }
 
             // BPL -- branch if plus
             (BPL, _) => {
                 if debug {
-					println!("BPL ${:0>2X}", self.data_bus);
-				}
+                    println!("BPL ${:0>2X}", self.data_bus);
+                }
 
                 if !self.sr.negative {
                     self.relative_branch();
                 }
                 Fetch
-            },
+            }
 
             // BRK -- force break
             // TODO: This should take 7 cycles, not 10
             (BRK, addr_mode) => {
                 if debug {
-					println!("BRK");
-				}
+                    println!("BRK");
+                }
                 if self.state == Address && addr_mode == Implied {
                     self.stack_word_ready = false;
                     self.stack_word = self.pc.wrapping_add(2);
@@ -303,7 +303,7 @@ impl Cpu {
                         self.sp = self.sp.wrapping_sub(1);
                         self.set_addr_bus(sp);
 
-                        let sr = self.sr.to_u8() | 24;  // Set BRK flag in the stored SR
+                        let sr = self.sr.to_u8() | 24; // Set BRK flag in the stored SR
                         self.set_data_bus(sr);
                         self.sr.int_disable = true;
 
@@ -321,50 +321,49 @@ impl Cpu {
 
                     Fetch
                 }
-
-            },
+            }
 
             // BVC -- branck on overflow clear
             (BVC, _) => {
                 if debug {
-					println!("BVC ${:0>2X}", self.read_data_bus());
-				}
+                    println!("BVC ${:0>2X}", self.read_data_bus());
+                }
 
                 if !self.sr.overflow {
                     self.relative_branch();
                 }
                 Fetch
-            },
+            }
 
             // BVS -- branch on overflow set
             (BVS, _) => {
                 if debug {
-					println!("BVS ${:0>2X}", self.read_data_bus());
-				}
+                    println!("BVS ${:0>2X}", self.read_data_bus());
+                }
 
                 if self.sr.overflow {
                     self.relative_branch();
                 }
                 Fetch
-            },
+            }
 
             // CLC -- clear carry flag
             (CLC, _) => {
                 if debug {
-					println!("CLC");
-				}
+                    println!("CLC");
+                }
                 self.sr.carry = false;
                 Fetch
-            },
+            }
 
             // CLD -- clear decimal mode
             (CLD, _) => {
                 if debug {
-					println!("CLD");
-				}
+                    println!("CLD");
+                }
                 self.sr.decimal = false;
                 Fetch
-            },
+            }
 
             // CLI -- clear interrupt disable
             (CLI, _) => {
@@ -373,7 +372,7 @@ impl Cpu {
                 }
                 self.sr.int_disable = false;
                 Fetch
-            },
+            }
 
             // CLV -- clear overflow
             (CLV, _) => {
@@ -382,40 +381,40 @@ impl Cpu {
                 }
                 self.sr.overflow = false;
                 Fetch
-            },
+            }
 
             // CMP -- compare with accumulator
             (CMP, _) => {
                 if debug {
-					println!("CMP (${:0>2X}), Y", self.addr_bus);
-				}
+                    println!("CMP (${:0>2X}), Y", self.addr_bus);
+                }
                 self.sr.compare(&self.a, &self.data_bus);
                 Fetch
-            },
+            }
 
             // CPX -- compare X to memory
             (CPX, _) => {
                 if debug {
-					println!("CPX #${:0>2X}", self.data_bus);
-				}
+                    println!("CPX #${:0>2X}", self.data_bus);
+                }
                 self.sr.compare(&self.x, &self.data_bus);
                 Fetch
-            },
+            }
 
             // CPY -- compare Y to memory
             (CPY, _) => {
                 if debug {
-					println!("CPY #${:0>2X}", self.read_data_bus());
-				}
+                    println!("CPY #${:0>2X}", self.read_data_bus());
+                }
                 self.sr.compare(&self.y, &self.data_bus);
                 Fetch
-            },
+            }
 
             // DEC -- decrement
             (DEC, addr_mode) => {
                 if debug {
-					println!("DEC ${:0>2X}", self.addr_lo);
-				}
+                    println!("DEC ${:0>2X}", self.addr_lo);
+                }
                 if addr_mode == AbsoluteHiX {
                     // Kill a cycle for absolute, x
                     self.curr_instr.addr_mode = AbsoluteHi;
@@ -427,46 +426,46 @@ impl Cpu {
                     self.set_data_bus(data);
                     Store
                 }
-            },
+            }
 
             // DEX -- decrement X
             (DEX, _) => {
                 if debug {
-					println!("DEX");
-				}
+                    println!("DEX");
+                }
                 self.x = self.x.wrapping_sub(1);
                 self.sr.determine_negative(self.x);
                 self.sr.determine_zero(self.x);
                 Fetch
-            },
+            }
 
             // DEY -- decrement Y
             (DEY, _) => {
                 if debug {
-					println!("DEY");
-				}
+                    println!("DEY");
+                }
                 self.y = self.y.wrapping_sub(1);
                 self.sr.determine_negative(self.y);
                 self.sr.determine_zero(self.y);
                 Fetch
-            },
+            }
 
             // EOR -- A XOR value
             (EOR, _) => {
                 if debug {
-					println!("EOR ${:0>2X}", self.read_data_bus());
-				}
+                    println!("EOR ${:0>2X}", self.read_data_bus());
+                }
                 self.a ^= self.read_data_bus();
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
-            },
+            }
 
             // INC -- increment
             (INC, addr_mode) => {
                 if debug {
-					println!("INC ${:0>2X}", self.addr_lo);
-				}
+                    println!("INC ${:0>2X}", self.addr_lo);
+                }
                 if addr_mode == AbsoluteHiX {
                     // Kill a cycle for absolute, x
                     self.curr_instr.addr_mode = AbsoluteHi;
@@ -478,87 +477,87 @@ impl Cpu {
                     self.set_data_bus(data);
                     Store
                 }
-            },
+            }
 
             // INX -- increment X
             (INX, _) => {
                 if debug {
-					println!("INX");
-				}
+                    println!("INX");
+                }
                 self.x = self.x.wrapping_add(1);
                 self.sr.determine_zero(self.x);
                 self.sr.determine_negative(self.x);
                 Fetch
-            },
+            }
 
             // INY -- increment Y
             (INY, _) => {
                 if debug {
-					println!("INY");
-				}
+                    println!("INY");
+                }
                 self.y = self.y.wrapping_add(1);
                 self.sr.determine_negative(self.y);
                 self.sr.determine_zero(self.y);
                 Fetch
-            },
+            }
 
             // JMP -- jump
             (JMP, _) => {
                 if debug {
-					println!("JMP ${:0>4X}", self.addr_from_hi_lo());
-				}
+                    println!("JMP ${:0>4X}", self.addr_from_hi_lo());
+                }
                 self.pc = self.addr_from_hi_lo();
                 Fetch
-            },
+            }
 
             // JSR -- jump and save return addr
             (JSR, _) => {
                 self.stack_word = self.pc;
                 self.pc = self.addr_from_hi_lo();
                 if debug {
-					println!("JSR ${:0>4X}", self.pc);
-				}
+                    println!("JSR ${:0>4X}", self.pc);
+                }
                 PushWordHi
-            },
+            }
 
             // LDA -- load into A
             (LDA, _) => {
                 if debug {
-					println!("LDA ${:0>2X}", self.addr_lo);
-				}
+                    println!("LDA ${:0>2X}", self.addr_lo);
+                }
                 self.a = self.data_bus;
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
-            },
-            
+            }
+
             // LDX -- load into X
             (LDX, _) => {
                 if debug {
-					println!("LDX #${:0>2X}", self.data_bus);
-				}
+                    println!("LDX #${:0>2X}", self.data_bus);
+                }
                 self.x = self.data_bus;
                 self.sr.determine_zero(self.x);
                 self.sr.determine_negative(self.x);
                 Fetch
-            },
+            }
 
             // LDY -- load into Y
             (LDY, _) => {
                 if debug {
-					println!("LDY #${:0>2X}", self.data_bus);
-				}
+                    println!("LDY #${:0>2X}", self.data_bus);
+                }
                 self.y = self.data_bus;
                 self.sr.determine_zero(self.y);
                 self.sr.determine_negative(self.y);
                 Fetch
-            },
-            
+            }
+
             // LSR -- shift right one
             (LSR, addr_mode) => {
                 if debug {
-					println!("LSR");
-				}
+                    println!("LSR");
+                }
                 if addr_mode == Implied {
                     self.sr.determine_carry(self.a);
                     self.a >>= 1;
@@ -578,54 +577,52 @@ impl Cpu {
                     self.sr.determine_negative(data);
                     Store
                 }
-            },
+            }
 
             // NOP -- no op
-            (NOP, _) => {
-                Fetch
-            },
+            (NOP, _) => Fetch,
 
             // ORA -- A | v
             (ORA, _) => {
                 if debug {
-					println!("ORA (${:0>2X}, X)", self.addr_lo);
-				}
+                    println!("ORA (${:0>2X}, X)", self.addr_lo);
+                }
                 self.a |= self.read_data_bus();
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
-            },
+            }
 
             // PHA -- push A on stack
             // TODO: Cycle counts are wrong for the four stack functions
             (PHA, _) => {
                 if debug {
-					println!("PHA");
-				}
+                    println!("PHA");
+                }
                 let a = self.a;
                 self.set_data_bus(a);
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
-                self.sp  = self.sp.wrapping_sub(1);
+                self.sp = self.sp.wrapping_sub(1);
                 self.pc = self.pc.wrapping_add(1);
 
                 Store
-            },
+            }
 
             // PHP -- push SR on stack
             (PHP, _) => {
                 if debug {
-					println!("PHP");
-				}
+                    println!("PHP");
+                }
                 let sr = self.sr.to_u8();
                 self.set_data_bus(sr);
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
-                self.sp  = self.sp.wrapping_sub(1);
+                self.sp = self.sp.wrapping_sub(1);
                 self.pc = self.pc.wrapping_add(1);
 
                 Store
-            },
+            }
 
             // PLA -- pull A from stack
             (PLA, addr_mode) => {
@@ -645,7 +642,7 @@ impl Cpu {
                     self.sr.determine_negative(self.a);
                     Fetch
                 }
-            },
+            }
 
             // PLP -- pull SR from stack
             (PLP, addr_mode) => {
@@ -664,13 +661,13 @@ impl Cpu {
                     self.sr.set_all_flags(data);
                     Fetch
                 }
-            },
-            
+            }
+
             // ROL -- rotate left
             (ROL, addr_mode) => {
                 if debug {
-					println!("ROL");
-				}
+                    println!("ROL");
+                }
                 if addr_mode == Implied {
                     self.sr.determine_negative(self.a);
                     self.a = self.a.rotate_left(1);
@@ -690,13 +687,13 @@ impl Cpu {
                     self.sr.determine_carry(data);
                     Store
                 }
-            },
+            }
 
             // ROR -- rotate one bit right
             (ROR, addr_mode) => {
                 if debug {
-					println!("ROR ${:0>2X}", self.addr_lo);
-				}
+                    println!("ROR ${:0>2X}", self.addr_lo);
+                }
                 if addr_mode == Implied {
                     self.sr.determine_negative(self.a);
                     self.a = self.a.rotate_right(1);
@@ -716,18 +713,18 @@ impl Cpu {
                     self.sr.determine_carry(data);
                     Store
                 }
-            },
+            }
 
             // RTI -- return from interrupt
             (RTI, _) => {
                 panic!();
-            },
+            }
 
             // RTS -- return from subroutine
             (RTS, _) => {
                 if debug {
-					println!("RTS");
-				}
+                    println!("RTS");
+                }
                 if self.stack_word_ready {
                     self.pc = self.stack_word;
                     self.stack_word_ready = false;
@@ -735,7 +732,7 @@ impl Cpu {
                 } else {
                     PullWordLo
                 }
-            },
+            }
 
             // SBC -- subtract with carry
             (SBC, _) => {
@@ -756,11 +753,11 @@ impl Cpu {
 
                 self.sr.determine_negative(self.a);
                 self.sr.determine_zero(self.a);
-                let result =(self.a as i16) - (self.read_data_bus() as i16);
+                let result = (self.a as i16) - (self.read_data_bus() as i16);
                 self.sr.overflow = result < -128 || result > 127;
-                    
+
                 Fetch
-            },
+            }
 
             // SEC -- set carry flag
             (SEC, _) => {
@@ -769,7 +766,7 @@ impl Cpu {
                 }
                 self.sr.carry = true;
                 Fetch
-            },
+            }
 
             // SED -- set decimal mode
             (SED, _) => {
@@ -778,54 +775,53 @@ impl Cpu {
                 }
                 self.sr.decimal = true;
                 Fetch
-            },
-
+            }
 
             // SEI -- disable interrupts
             (SEI, _) => {
                 if debug {
-					println!("SEI");
-				}
+                    println!("SEI");
+                }
                 self.sr.int_disable = true;
                 Fetch
-            },
+            }
 
             // STA -- store A
             // TODO: All addressing modes for STA take a few cycles too long
             (STA, _) => {
                 if debug {
-					println!("STA ${:0>4X}", self.addr_bus);
-				}
+                    println!("STA ${:0>4X}", self.addr_bus);
+                }
                 let a = self.a;
                 self.set_data_bus(a);
                 Store
-            },
-            
+            }
+
             // STX -- store x
             (STX, _) => {
                 if debug {
-					println!("STX ${:0>4X}", self.addr_bus);
-				}
+                    println!("STX ${:0>4X}", self.addr_bus);
+                }
                 let x = self.x;
                 self.set_data_bus(x);
                 Store
-            },
+            }
 
             // STY -- store y
             (STY, _) => {
                 if debug {
-					println!("STY ${:0>2X}", self.addr_lo);
-				}
+                    println!("STY ${:0>2X}", self.addr_lo);
+                }
                 let y = self.y;
                 self.set_data_bus(y);
                 Store
-            },
+            }
 
             // TAX -- transfer A to X
             (TAX, _) => {
                 if debug {
-					println!("TAX");
-				}
+                    println!("TAX");
+                }
                 self.x = self.a;
                 self.sr.determine_negative(self.x);
                 self.sr.determine_zero(self.x);
@@ -835,58 +831,58 @@ impl Cpu {
             // TAY -- transfer A to Y
             (TAY, _) => {
                 if debug {
-					println!("TAY");
-				}
+                    println!("TAY");
+                }
                 self.y = self.a;
                 self.sr.determine_negative(self.y);
                 self.sr.determine_zero(self.y);
                 Fetch
             }
-            
+
             // TYA -- transfer Y to A
             (TYA, _) => {
                 if debug {
-					println!("TYA");
-				}
+                    println!("TYA");
+                }
                 self.a = self.y;
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
-            },
+            }
 
             // TSX -- transfer SP to X
             (TSX, _) => {
                 if debug {
-					println!("TSX");
-				}
+                    println!("TSX");
+                }
                 self.x = self.sp;
                 self.sr.determine_zero(self.x);
                 self.sr.determine_negative(self.x);
                 Fetch
-            },
+            }
 
             // TXA -- transfer X to A
             (TXA, _) => {
                 if debug {
-					println!("TXA");
-				}
+                    println!("TXA");
+                }
                 self.a = self.x;
                 self.sr.determine_zero(self.a);
                 self.sr.determine_negative(self.a);
                 Fetch
-            },
+            }
 
             // TXS -- transfer X to SP
             (TXS, _) => {
                 if debug {
-					println!("TXS");
-				}
+                    println!("TXS");
+                }
                 self.sp = self.x;
                 Fetch
-            },
+            }
 
             // - Undocumented Instructions - //
-            
+
             // ALR -- combination of AND and LSR
             (ALR, _) => {
                 if debug {
@@ -899,7 +895,7 @@ impl Cpu {
                 self.sr.determine_negative(self.a);
 
                 Fetch
-            },
+            }
 
             // ANC -- AND with carry
             (ANC, _) => {
@@ -912,7 +908,7 @@ impl Cpu {
                 self.sr.carry = self.sr.negative;
 
                 Fetch
-            },
+            }
 
             // ARR -- Combination of AND and ROR
             (ARR, _) => {
@@ -928,7 +924,7 @@ impl Cpu {
                 self.sr.overflow = (self.a ^ (self.a << 1)) & 0x20 == 0x20;
 
                 Fetch
-            },
+            }
 
             // AXS -- Combination of AND and SBC without borrow
             (AXS, _) => {
@@ -942,7 +938,7 @@ impl Cpu {
                 self.sr.determine_carry(self.a);
 
                 Fetch
-            },
+            }
 
             // DCP -- DEC then CMP
             (DCP, _) => {
@@ -958,7 +954,7 @@ impl Cpu {
                 self.sr.compare(&self.a, &data);
 
                 Fetch
-            },
+            }
 
             // LAX -- LDA then TAX
             (LAX, _) => {
@@ -971,7 +967,7 @@ impl Cpu {
                 self.sr.determine_negative(self.x);
 
                 Fetch
-            },
+            }
 
             // SAX -- store A & X
             (SAX, _) => {
@@ -982,12 +978,10 @@ impl Cpu {
                 self.set_data_bus(ax);
 
                 Store
-            },
+            }
 
             // KIL -- halt the CPU
-            (KIL, _) => {
-                Halt
-            },
+            (KIL, _) => Halt,
 
             (_, _) => {
                 panic!("Unimplemented instruction {:?}", self.curr_instr)
@@ -1010,7 +1004,7 @@ impl Cpu {
                 } else {
                     self.do_instr(debug)
                 }
-            },
+            }
             Interrupt => {
                 // Ignore the interrupt if disabled
                 if self.sr.int_disable {
@@ -1026,11 +1020,11 @@ impl Cpu {
 
                     InterruptLo
                 }
-            },
+            }
             InterruptLo => {
                 self.addr_lo = self.read_data_bus();
                 InterruptHi
-            },
+            }
             InterruptHi => {
                 self.addr_hi = self.read_data_bus();
                 let addr = self.addr_from_hi_lo();
@@ -1039,16 +1033,15 @@ impl Cpu {
 
                 self.irq = false;
                 Fetch
-            },
+            }
             Fetch => {
-
                 if !self.irq {
                     self.curr_instr = Instruction::from_u8(self.read_data_bus());
                     Address
                 } else {
                     Interrupt
                 }
-            },
+            }
             Load => {
                 let s = self.do_instr(debug);
                 if s == Fetch {
@@ -1056,11 +1049,11 @@ impl Cpu {
                     self.set_addr_bus(pc);
                 }
                 s
-            },
+            }
             Store => {
                 self.rw = false;
                 ToLoad
-            },
+            }
             Address => {
                 use self::addressing_mode::AddressingMode::*;
                 match self.curr_instr.addr_mode {
@@ -1079,31 +1072,31 @@ impl Cpu {
                         } else {
                             Load
                         }
-                    },
+                    }
                     ZeropageXAdd => {
                         self.addr_lo = self.addr_lo.wrapping_add(self.x);
                         let addr = self.addr_from_hi_lo();
                         self.set_addr_bus(addr);
 
                         Load
-                    },
+                    }
                     ZeropageYAdd => {
                         self.addr_lo = self.addr_lo.wrapping_add(self.y);
                         let addr = self.addr_from_hi_lo();
                         self.set_addr_bus(addr);
 
                         Load
-                    },
+                    }
                     AbsoluteLo => {
                         self.addr_lo = self.read_data_bus();
                         self.curr_instr.addr_mode = AbsoluteHi;
                         Address
-                    },
+                    }
                     AbsoluteLoX => {
                         self.addr_lo = self.read_data_bus();
                         self.curr_instr.addr_mode = AbsoluteHiX;
                         Address
-                    },
+                    }
                     AbsoluteLoY => {
                         self.addr_lo = self.read_data_bus();
                         self.curr_instr.addr_mode = AbsoluteHiY;
@@ -1115,32 +1108,34 @@ impl Cpu {
                         self.set_addr_bus(addr);
 
                         // JMP and JSR are special cases since we don't care what's on the data bus
-                        if self.curr_instr.opcode == Opcode::JMP || self.curr_instr.opcode == Opcode::JSR {
+                        if self.curr_instr.opcode == Opcode::JMP
+                            || self.curr_instr.opcode == Opcode::JSR
+                        {
                             self.do_instr(debug)
                         } else {
                             Load
                         }
-                    },
+                    }
                     AbsoluteHiX => {
                         self.addr_hi = self.read_data_bus();
                         let addr = self.addr_from_hi_lo().wrapping_add(self.x as u16);
                         self.set_addr_bus(addr);
 
                         Load
-                    },
+                    }
                     AbsoluteHiY => {
                         self.addr_hi = self.read_data_bus();
                         let addr = self.addr_from_hi_lo().wrapping_add(self.y as u16);
                         self.set_addr_bus(addr);
 
                         Load
-                    },
+                    }
                     IndirectLo => {
                         self.addr_lo = self.read_data_bus();
                         self.curr_instr.addr_mode = IndirectHi;
 
                         Address
-                    },
+                    }
                     IndirectHi => {
                         self.addr_hi = self.read_data_bus();
                         let addr = self.addr_from_hi_lo();
@@ -1150,7 +1145,7 @@ impl Cpu {
                         self.curr_instr.addr_mode = AbsoluteLo;
 
                         Address
-                    },
+                    }
                     IndexedIndirect => {
                         self.addr_hi = 0u8;
                         self.addr_lo = self.read_data_bus();
@@ -1159,14 +1154,14 @@ impl Cpu {
 
                         self.curr_instr.addr_mode = IndexedIndirectAdd;
                         Address
-                    },
+                    }
                     IndexedIndirectAdd => {
                         let addr = self.addr_bus.wrapping_add(self.x as u16);
                         self.set_addr_bus(addr);
 
                         self.curr_instr.addr_mode = IndexedIndirectLo;
                         Address
-                    },
+                    }
                     IndexedIndirectLo => {
                         self.addr_lo = self.read_data_bus();
                         let addr = self.addr_bus.wrapping_add(1);
@@ -1174,7 +1169,7 @@ impl Cpu {
 
                         self.curr_instr.addr_mode = IndexedIndirectHi;
                         Address
-                    },
+                    }
                     IndexedIndirectHi => {
                         self.addr_hi = self.read_data_bus();
                         let addr = self.addr_from_hi_lo();
@@ -1182,7 +1177,7 @@ impl Cpu {
 
                         self.pc = self.pc.wrapping_add(1);
                         Load
-                    },
+                    }
                     IndirectIndexed => {
                         self.addr_hi = 0u8;
                         self.addr_lo = self.read_data_bus();
@@ -1191,7 +1186,7 @@ impl Cpu {
 
                         self.curr_instr.addr_mode = IndirectIndexedLo;
                         Address
-                    },
+                    }
                     IndirectIndexedLo => {
                         self.addr_lo = self.addr_lo.wrapping_add(1);
                         let addr = self.addr_from_hi_lo();
@@ -1201,7 +1196,7 @@ impl Cpu {
 
                         self.curr_instr.addr_mode = IndirectIndexedHi;
                         Address
-                    },
+                    }
                     IndirectIndexedHi => {
                         self.addr_hi = self.read_data_bus();
                         self.addr_lo = self.addr_lo.wrapping_add(self.y);
@@ -1217,14 +1212,14 @@ impl Cpu {
                         } else {
                             Load
                         }
-                    },
+                    }
                     IndirectIndexedPageCross => {
                         self.addr_hi = self.addr_hi.wrapping_add(1);
                         let addr = self.addr_from_hi_lo();
                         self.set_addr_bus(addr);
 
                         Load
-                    },
+                    }
 
                     Implied => {
                         let s = self.do_instr(debug);
@@ -1233,12 +1228,10 @@ impl Cpu {
                             self.pc = self.pc.wrapping_sub(1);
                         }
                         s
-                    },
-                    Immediate => {
-                        self.do_instr(debug)
-                    },
+                    }
+                    Immediate => self.do_instr(debug),
                 }
-            },
+            }
             PushWordLo => {
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
@@ -1247,7 +1240,7 @@ impl Cpu {
                 self.sp = self.sp.wrapping_sub(1);
 
                 ToLoad
-            },
+            }
             PushWordHi => {
                 let sp = self.get_stack_addr();
                 self.set_addr_bus(sp);
@@ -1256,7 +1249,7 @@ impl Cpu {
                 self.sp = self.sp.wrapping_sub(1);
 
                 PushWordLo
-            },
+            }
             PullWordHi => {
                 if self.stack_word_ready {
                     self.stack_word += (self.data_bus as u16) << 8;
@@ -1270,7 +1263,7 @@ impl Cpu {
                     self.stack_word_ready = true;
                     PullWordHi
                 }
-            },
+            }
             PullWordLo => {
                 self.sp = self.sp.wrapping_add(1);
                 let sp = self.get_stack_addr();
@@ -1280,10 +1273,10 @@ impl Cpu {
                 self.stack_word = 0u16;
 
                 PullWordHi
-            },
+            }
             Halt => {
                 panic!("CPU halted");
-            },
+            }
         };
         self.state = next_state;
         self.cycles = self.cycles.wrapping_add(1);
@@ -1323,7 +1316,7 @@ impl Cpu {
     pub fn write_dataport(&mut self, value: u8) {
         // TODO: This is not quite how the DDR masking works
         self.dataport = self.data_direction_reg & value;
-        
+
         // Reset rom statuses
         let rom_status = self.read_dataport() & 7;
         self.kernal_rom_enabled = rom_status % 4 > 1;
@@ -1363,21 +1356,21 @@ impl Cpu {
                 self.pc = self.pc.wrapping_add(1);
                 let pc = self.pc;
                 self.set_addr_bus(pc);
-            },
+            }
             Address => {
                 use self::addressing_mode::AddressingMode::*;
                 match self.curr_instr.addr_mode {
-                    AbsoluteLo | AbsoluteLoX | AbsoluteLoY | AbsoluteHi | AbsoluteHiX | AbsoluteHiY |
-                    Zeropage | ZeropageX | ZeropageY | Immediate | IndirectLo => {
+                    AbsoluteLo | AbsoluteLoX | AbsoluteLoY | AbsoluteHi | AbsoluteHiX
+                    | AbsoluteHiY | Zeropage | ZeropageX | ZeropageY | Immediate | IndirectLo => {
                         self.pc = self.pc.wrapping_add(1);
                         let pc = self.pc;
                         self.set_addr_bus(pc);
-                    },
+                    }
                     _ => {
                         // Do nothing
-                    },
+                    }
                 }
-            },
+            }
             _ => {
                 // Do nothing
             }
