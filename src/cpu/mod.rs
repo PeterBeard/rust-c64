@@ -630,7 +630,7 @@ impl Cpu {
                     println!("PLA");
                 }
                 if addr_mode == Implied {
-                    self.sp.wrapping_add(1);
+                    self.sp = self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
                     self.set_addr_bus(sp);
                     self.pc = self.pc.wrapping_add(1);
@@ -650,7 +650,7 @@ impl Cpu {
                     println!("PLA");
                 }
                 if addr_mode == Implied {
-                    self.sp.wrapping_add(1);
+                    self.sp = self.sp.wrapping_add(1);
                     let sp = self.get_stack_addr();
                     self.set_addr_bus(sp);
                     self.pc = self.pc.wrapping_add(1);
