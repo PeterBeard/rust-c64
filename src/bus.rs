@@ -5,8 +5,8 @@
 extern crate sdl2;
 use sdl2::keyboard::{Keycode, Mod};
 
+use super::{EmulatorEvent, Screen};
 use crate::cpu::Cpu;
-use super::{Screen, EmulatorEvent};
 
 use crate::io::vic;
 use crate::io::vic::Vic;
@@ -17,11 +17,11 @@ use crate::io::sid::Sid;
 use crate::io::cia::Cia;
 
 use std::fs::File;
-use std::io::{Read, Write, stdin, stdout};
+use std::io::{stdin, stdout, Read, Write};
 
-use std::time::{Instant, Duration};
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread::sleep;
-use std::sync::mpsc::{Sender, Receiver};
+use std::time::{Duration, Instant};
 
 const KERNAL_ROM_START: usize = 0xe000;
 const BASIC_ROM_START: usize = 0xa000;
@@ -70,7 +70,11 @@ pub struct Bus {
 impl Bus {
     pub fn new(debug: bool) -> Bus {
         Bus {
-            mode: if debug { SystemMode::DebugStep } else { SystemMode::Run },
+            mode: if debug {
+                SystemMode::DebugStep
+            } else {
+                SystemMode::Run
+            },
             ram: [0u8; 65536],
             color_ram: [0u8; 1024],
             kernal_rom: [0u8; KERNAL_ROM_SIZE],
@@ -89,13 +93,13 @@ impl Bus {
     pub fn initialize(&mut self, ram_file: &str) {
         let mut file = match File::open(ram_file) {
             Ok(f) => f,
-            Err(e) => panic!("Failed to open RAM image file: {}", e)
+            Err(e) => panic!("Failed to open RAM image file: {}", e),
         };
         match file.read(&mut self.ram) {
-            Ok(_) => { },
+            Ok(_) => {}
             Err(e) => {
                 panic!("Error reading RAM image file: {}", e);
-            },
+            }
         }
     }
 
@@ -103,38 +107,38 @@ impl Bus {
     pub fn load_roms(&mut self, kernal_rom_file: &str, basic_rom_file: &str, char_rom_file: &str) {
         let mut k_file = match File::open(kernal_rom_file) {
             Ok(f) => f,
-            Err(e) => panic!("Failed to open KERNAL ROM file: {}", e)
+            Err(e) => panic!("Failed to open KERNAL ROM file: {}", e),
         };
         match k_file.read(&mut self.kernal_rom) {
-            Ok(_) => { },
+            Ok(_) => {}
             Err(e) => {
                 panic!("Error reading KERNAL ROM file: {}", e);
-            },
+            }
         }
 
         let mut b_file = match File::open(basic_rom_file) {
             Ok(f) => f,
-            Err(e) => panic!("Failed to open BASIC ROM file: {}", e)
+            Err(e) => panic!("Failed to open BASIC ROM file: {}", e),
         };
         match b_file.read(&mut self.basic_rom) {
-            Ok(_) => { },
+            Ok(_) => {}
             Err(e) => {
                 panic!("Error reading BASIC ROM file: {}", e);
-            },
+            }
         }
 
         let mut c_file = match File::open(char_rom_file) {
             Ok(f) => f,
-            Err(e) => panic!("Failed to open character ROM file: {}", e)
+            Err(e) => panic!("Failed to open character ROM file: {}", e),
         };
         match c_file.read(&mut self.char_rom) {
-            Ok(_) => { },
+            Ok(_) => {}
             Err(e) => {
                 panic!("Error reading character ROM file: {}", e);
-            },
+            }
         }
     }
-    
+
     // Read a byte from the given address
     pub fn read_byte(&self, addr: usize) -> u8 {
         if addr == 0 {
@@ -143,16 +147,22 @@ impl Bus {
             return self.cpu.read_dataport();
         }
 
-        if self.cpu.krom_enabled() && addr >= KERNAL_ROM_START && addr < KERNAL_ROM_START + KERNAL_ROM_SIZE
+        if self.cpu.krom_enabled()
+            && addr >= KERNAL_ROM_START
+            && addr < KERNAL_ROM_START + KERNAL_ROM_SIZE
         {
             let offset_addr = addr - KERNAL_ROM_START;
             self.kernal_rom[offset_addr]
-
-        } else if self.cpu.brom_enabled() && addr >= BASIC_ROM_START && addr < BASIC_ROM_START + BASIC_ROM_SIZE {
+        } else if self.cpu.brom_enabled()
+            && addr >= BASIC_ROM_START
+            && addr < BASIC_ROM_START + BASIC_ROM_SIZE
+        {
             let offset_addr = addr - BASIC_ROM_START;
             self.basic_rom[offset_addr]
-
-        } else if self.cpu.crom_enabled() && addr >= CHAR_ROM_START && addr < CHAR_ROM_START + CHAR_ROM_SIZE {
+        } else if self.cpu.crom_enabled()
+            && addr >= CHAR_ROM_START
+            && addr < CHAR_ROM_START + CHAR_ROM_SIZE
+        {
             let offset_addr = addr - CHAR_ROM_START;
             self.char_rom[offset_addr]
         } else if self.cpu.io_enabled() && addr >= IO_START && addr <= IO_END {
@@ -222,7 +232,12 @@ impl Bus {
         (bank + (addr & 0x3ff)) as usize
     }
 
-    pub fn run(&mut self, clock_speed_mhz: u32, screen_tx: Sender<Screen>, event_rx: Receiver<EmulatorEvent>) {
+    pub fn run(
+        &mut self,
+        clock_speed_mhz: u32,
+        screen_tx: Sender<Screen>,
+        event_rx: Receiver<EmulatorEvent>,
+    ) {
         self.cpu.reset();
         let mut cycles: u64 = 0;
 
@@ -238,17 +253,17 @@ impl Bus {
                 match e {
                     EmulatorEvent::Key(keycode, m) => {
                         // TODO: Handle keyboard events with CIA1
-                    },
+                    }
                     EmulatorEvent::Quit => {
                         break 'emulator;
-                    },
+                    }
                 }
             }
 
             // Run the VIC-II
             let addr = self.convert_vic_ii_addr(self.vic.read_addr_bus());
             let byte = self.read_byte(addr);
-            let color = self.color_ram[addr & 0x03ff];  // Lowest 10 bits of addr always point to color RAM
+            let color = self.color_ram[addr & 0x03ff]; // Lowest 10 bits of addr always point to color RAM
 
             self.vic.data_in(byte);
             self.vic.color_in(color);
@@ -289,7 +304,8 @@ impl Bus {
 
             if self.mode != SystemMode::Run {
                 let elapsed = total_t.elapsed();
-                let total_time_ms = (elapsed.as_secs() * 1000) + ((elapsed.subsec_nanos() / 1_000_000) as u64);
+                let total_time_ms =
+                    (elapsed.as_secs() * 1000) + ((elapsed.subsec_nanos() / 1_000_000) as u64);
                 let speed = (cycles as f32) / (total_time_ms as f32);
                 println!("----------");
                 println!("  Mean Clock speed: {:8.3} kHz", speed);
@@ -300,25 +316,28 @@ impl Bus {
                 if self.mode == SystemMode::DebugStep {
                     print!("] ");
                     match stdout().flush() {
-                        Ok(_) => { },
-                        Err(e) => { println!("Error flushing STDOUT: {:?}", e); }
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Error flushing STDOUT: {:?}", e);
+                        }
                     }
 
                     let mut input = String::new();
                     match stdin().read_line(&mut input) {
-                        Ok(_) => { },
-                        Err(e) => { panic!("Error reading STDIN: {}", e); },
+                        Ok(_) => {}
+                        Err(e) => {
+                            panic!("Error reading STDIN: {}", e);
+                        }
                     }
-                    
+
                     match input.trim() {
                         "r" | "run" => {
                             self.mode = SystemMode::DebugRun;
-                        },
+                        }
                         "h" | "help" => {
                             println!("Help not implemented");
-                        },
-                        "" => {
-                        },
+                        }
+                        "" => {}
                         _ => {
                             println!("Invalid command");
                         }
@@ -341,7 +360,8 @@ impl Bus {
             // Sample the speed every 10k cycles to make sure the clock speed isn't too fast
             if cycles % 10000 == 0 {
                 let elapsed = total_t.elapsed();
-                let total_time_ms = (elapsed.as_secs() * 1000) + ((elapsed.subsec_nanos() / 1_000_000) as u64);
+                let total_time_ms =
+                    (elapsed.as_secs() * 1000) + ((elapsed.subsec_nanos() / 1_000_000) as u64);
                 let speed = (cycles as f32) / (total_time_ms as f32);
 
                 if speed > (clock_speed_mhz as f32) / 1_000_000f32 {
@@ -351,7 +371,7 @@ impl Bus {
                 }
 
                 if self.mode != SystemMode::Run {
-                    println!("Ideal clock speed: {} kHz", clock_speed_mhz/1_000_000);
+                    println!("Ideal clock speed: {} kHz", clock_speed_mhz / 1_000_000);
                     println!("Mean clock speed:  {} kHz", speed);
                     println!("Idle time: {} ns", idle_time.subsec_nanos());
                     println!("{:?}", self.cpu);
