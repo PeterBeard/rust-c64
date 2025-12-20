@@ -57,5 +57,5 @@ $ cargo run -- -k roms/kernal.bin -b roms/basic.bin -r roms/char.bin
 * [Commodore 64 Memory Map](http://sta.c64.org/cbm64mem.html)
 
 ## VIC-II
-* [The MOS 6567/6569 video controller (VIC-II) and its application in the Commodore 64](http://vice-emu.sourceforge.net/plain/VIC-Article.txt)
+* [The MOS 6567/6569 video controller (VIC-II) and its application in the Commodore 64](https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt)
 * [VIC-II for beginners](http://dustlayer.com/vic-ii/2013/4/22/when-visibility-matters)
